@@ -7,114 +7,137 @@ export default function Miestnosti() {
   const [selectedDate, setSelectedDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
+  const [startTime, setStartTime] = useState("09:00");
+  const [duration, setDuration] = useState("1 hour");
 
-  // 🔹 Load rooms from backend
+  // Fetch available rooms for a given date and time
   useEffect(() => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/rooms?date=${selectedDate}`)
-      .then((res) => res.json())
-      .then((data) => setRooms(data))
-      .catch((err) => console.error(err))
+    fetch(`http://localhost:5000/api/rooms?date=${selectedDate}&time=${startTime}`)
+      .then(res => res.json())
+      .then(data => setRooms(data))
+      .catch(err => console.error(err))
       .finally(() => setLoading(false));
-  }, [selectedDate]);
+  }, [selectedDate, startTime]);
 
-  // 🔹 Filter (all / free / occupied)
-  const filteredRooms = rooms.filter((r) =>
+  const filteredRooms = rooms.filter(r =>
     filter === "all" ? true : r.status === filter
   );
 
-  // 🔹 Reservation handler
+  // Create a reservation
   const handleBook = async (roomId) => {
     const confirm = window.confirm(
-      `Chceš rezervovať miestnosť s ID: ${roomId} pre ${selectedDate}?`
+      `Reserve room ${roomId} on ${selectedDate} at ${startTime} for ${duration}?`
     );
     if (!confirm) return;
 
     const body = {
       miestnost_id: roomId,
-      uzivatel_id: 1, // For testing; later replace with logged-in user
+      uzivatel_id: 1, // test user ID
       datum_rezervacie: selectedDate,
-      dlzka_rezervacie: "2 hours",
+      zaciatok_rezervacie: startTime,
+      dlzka_rezervacie: duration
     };
 
     try {
       const res = await fetch("http://localhost:5000/api/book-room", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
       });
 
       const data = await res.json();
-
       if (res.ok) {
-        alert("✅ Rezervácia bola vytvorená!");
-        // update local state (mark as occupied)
-        setRooms((prev) =>
-          prev.map((r) =>
+        alert(`✅ Reservation confirmed at ${startTime}`);
+        setRooms(prev =>
+          prev.map(r =>
             r.miestnost_id === roomId ? { ...r, status: "occupied" } : r
           )
         );
       } else {
-        alert(`❌ ${data.error || "Nepodarilo sa vytvoriť rezerváciu"}`);
+        alert(`❌ ${data.error || "Reservation failed"}`);
       }
     } catch (err) {
       console.error(err);
-      alert("Chyba pripojenia k serveru");
+      alert("Server connection error");
     }
   };
 
-  // 🔹 Render
   return (
     <div style={{ padding: "1rem" }}>
-      <h2>Zoznam miestností</h2>
+      <h2>Room Reservations</h2>
 
-      {/* Date selector */}
+      {/* Date & Time selection */}
       <div style={{ marginBottom: "1rem" }}>
         <label>
-          Dátum:&nbsp;
+          📅 Date:
           <input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
+            style={{ marginLeft: "0.5rem" }}
           />
+        </label>
+
+        <label style={{ marginLeft: "1rem" }}>
+          ⏰ Start time:
+          <input
+            type="time"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+            style={{ marginLeft: "0.5rem" }}
+          />
+        </label>
+
+        <label style={{ marginLeft: "1rem" }}>
+          ⏳ Duration:
+          <select
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            style={{ marginLeft: "0.5rem" }}
+          >
+            <option value="30 minutes">30 minutes</option>
+            <option value="1 hour">1 hour</option>
+            <option value="2 hours">2 hours</option>
+            <option value="3 hours">3 hours</option>
+          </select>
         </label>
       </div>
 
-      {/* Filter */}
+      {/* Filters */}
       <div style={{ marginBottom: "1rem" }}>
-        <button onClick={() => setFilter("all")}>Všetky</button>
-        <button onClick={() => setFilter("free")}>Voľné</button>
-        <button onClick={() => setFilter("occupied")}>Obsadené</button>
+        <button onClick={() => setFilter("all")}>All</button>
+        <button onClick={() => setFilter("free")}>Free</button>
+        <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
 
+      {/* Table */}
       {loading ? (
-        <p>Načítavam...</p>
+        <p>Loading...</p>
       ) : (
         <table border="1" cellPadding="8" width="100%">
           <thead>
             <tr>
               <th>ID</th>
-              <th>Číslo miestnosti</th>
-              <th>Kapacita</th>
-              <th>Poschodie</th>
-              <th>Stav</th>
-              <th>Rezervácia</th>
+              <th>Room</th>
+              <th>Capacity</th>
+              <th>Floor</th>
+              <th>Status</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {filteredRooms.length > 0 ? (
-              filteredRooms.map((r) => (
+              filteredRooms.map(r => (
                 <tr key={r.miestnost_id}>
                   <td>{r.miestnost_id}</td>
                   <td>{r.cislo_miestnosti}</td>
                   <td>{r.kapacita}</td>
                   <td>{r.poschodie}</td>
-                  <td>{r.status === "free" ? "Voľná" : "Obsadená"}</td>
+                  <td>{r.status === "free" ? "Free" : "Occupied"}</td>
                   <td>
                     {r.status === "free" ? (
-                      <button onClick={() => handleBook(r.miestnost_id)}>
-                        Rezervovať
-                      </button>
+                      <button onClick={() => handleBook(r.miestnost_id)}>Book</button>
                     ) : (
                       "—"
                     )}
@@ -123,7 +146,7 @@ export default function Miestnosti() {
               ))
             ) : (
               <tr>
-                <td colSpan="6">Žiadne miestnosti sa nenašli.</td>
+                <td colSpan="6">No rooms found.</td>
               </tr>
             )}
           </tbody>
