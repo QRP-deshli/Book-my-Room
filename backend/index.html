@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Room Reservation Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 30px;
+      background: #fafafa;
+    }
+    input, button {
+      margin: 5px;
+      padding: 6px 10px;
+      font-size: 1rem;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 15px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧩 Room Reservation Test</h1>
+
+  <h3>Check free rooms</h3>
+  <input type="date" id="checkDate">
+  <button onclick="checkFreeRooms()">Check</button>
+
+  <div id="roomsResult"></div>
+
+  <hr>
+
+  <h3>Create Reservation</h3>
+  <form id="reserveForm" onsubmit="makeReservation(event)">
+    <input type="number" id="miestnost_id" placeholder="Room ID" required>
+    <input type="number" id="uzivatel_id" placeholder="User ID" required>
+    <input type="date" id="datum_rezervacie" required>
+    <input type="text" id="dlzka_rezervacie" placeholder='e.g. "2 hours"' required>
+    <button type="submit">Reserve</button>
+  </form>
+
+  <p id="reserveStatus"></p>
+
+  <script>
+    const API_BASE = "http://localhost:3000";
+
+    async function checkFreeRooms() {
+      const date = document.getElementById("checkDate").value;
+      if (!date) return alert("Please select a date");
+
+      const res = await fetch(`${API_BASE}/free-rooms?date=${date}`);
+      const data = await res.json();
+
+      const div = document.getElementById("roomsResult");
+      if (data.length === 0) {
+        div.innerHTML = "<p>No free rooms found.</p>";
+        return;
+      }
+
+      let html = "<table><tr><th>ID</th><th>Room Number</th><th>Capacity</th><th>Address</th><th>City</th></tr>";
+      data.forEach(r => {
+        html += `<tr>
+          <td>${r.miestnost_id}</td>
+          <td>${r.cislo_miestnosti}</td>
+          <td>${r.kapacita}</td>
+          <td>${r.adresa}</td>
+          <td>${r.mesto}</td>
+        </tr>`;
+      });
+      html += "</table>";
+      div.innerHTML = html;
+    }
+
+    async function makeReservation(event) {
+      event.preventDefault();
+
+      const body = {
+        miestnost_id: parseInt(document.getElementById("miestnost_id").value),
+        uzivatel_id: parseInt(document.getElementById("uzivatel_id").value),
+        datum_rezervacie: document.getElementById("datum_rezervacie").value,
+        dlzka_rezervacie: document.getElementById("dlzka_rezervacie").value
+      };
+
+      const res = await fetch(`${API_BASE}/reserve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      document.getElementById("reserveStatus").textContent = data.message || data.error;
+    }
+  </script>
+</body>
+</html>
