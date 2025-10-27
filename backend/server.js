@@ -27,24 +27,29 @@ pool.connect()
 
 /**
  * GET /api/rooms
- * Returns all rooms with their current status ("free" or "occupied")
+ * Returns rooms filtered by optional search query (room or address)
+ * and their current status ("free" or "occupied").
  * Query params:
  *   date=YYYY-MM-DD
  *   time=HH:MM
+ *   search=text
  */
 app.get("/api/rooms", async (req, res) => {
   try {
-    const { date, time } = req.query;
+    const { date, time, search } = req.query;
     const selectedDate = date || new Date().toISOString().slice(0, 10);
     const selectedTime = time || "00:00";
+    const searchText = search ? `%${search.toLowerCase()}%` : "%%";
 
-    // Check if any reservation overlaps with the requested time
-    const query = `
+    // Step 1: Find rooms filtered by search (room number, address or city)
+    const roomsQuery = `
       SELECT 
         m.miestnost_id,
         m.cislo_miestnosti,
         m.kapacita,
         m.poschodie,
+        b.adresa,
+        b.mesto,
         CASE 
           WHEN EXISTS (
             SELECT 1 FROM public.rezervacia r
@@ -57,16 +62,43 @@ app.get("/api/rooms", async (req, res) => {
           ELSE 'free'
         END AS status
       FROM public.miestnost m
+      JOIN public.budova b ON m.budova_id = b.budova_id
+      WHERE LOWER(m.cislo_miestnosti) LIKE $3
+         OR LOWER(b.adresa) LIKE $3
+         OR LOWER(b.mesto) LIKE $3
+         OR $3 = '%%'
       ORDER BY m.miestnost_id;
     `;
 
-    const result = await pool.query(query, [selectedDate, selectedTime]);
-    res.json(result.rows);
+    const result = await pool.query(roomsQuery, [selectedDate, selectedTime, searchText]);
+    const rooms = result.rows;
+
+    // Step 2: Optional — suggest next available slot if a specific room was searched
+    let nextFreeSlot = null;
+    if (search && rooms.length === 1 && rooms[0].status === "occupied") {
+      const roomId = rooms[0].miestnost_id;
+
+      // Find the next reservation end time for this room
+      const nextSlotQuery = `
+        SELECT (r.zaciatok_rezervacie + r.dlzka_rezervacie) AS free_after
+        FROM public.rezervacia r
+        WHERE r.miestnost_id = $1
+          AND r.datum_rezervacie = $2
+          AND (r.zaciatok_rezervacie + r.dlzka_rezervacie) > $3::TIME
+        ORDER BY r.zaciatok_rezervacie
+        LIMIT 1;
+      `;
+      const slotRes = await pool.query(nextSlotQuery, [roomId, selectedDate, selectedTime]);
+      if (slotRes.rows.length > 0) nextFreeSlot = slotRes.rows[0].free_after;
+    }
+
+    res.json({ rooms, nextFreeSlot });
   } catch (err) {
     console.error("Error fetching rooms:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 /**
  * POST /api/book-room

@@ -9,18 +9,25 @@ export default function Miestnosti() {
   );
   const [startTime, setStartTime] = useState("09:00");
   const [duration, setDuration] = useState("1 hour");
+  const [search, setSearch] = useState(""); // Room or address search input
+  const [suggestedSlot, setSuggestedSlot] = useState(null); // Next free time suggestion
 
   // Fetch available rooms for a given date and time
   useEffect(() => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/rooms?date=${selectedDate}&time=${startTime}`)
-      .then(res => res.json())
-      .then(data => setRooms(data))
-      .catch(err => console.error(err))
+    fetch(
+      `http://localhost:5000/api/rooms?date=${selectedDate}&time=${startTime}&search=${search}`
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        setRooms(data.rooms || []);
+        setSuggestedSlot(data.nextFreeSlot || null); // server may include suggestion
+      })
+      .catch((err) => console.error(err))
       .finally(() => setLoading(false));
-  }, [selectedDate, startTime]);
+  }, [selectedDate, startTime, search]);
 
-  const filteredRooms = rooms.filter(r =>
+  const filteredRooms = rooms.filter((r) =>
     filter === "all" ? true : r.status === filter
   );
 
@@ -36,21 +43,21 @@ export default function Miestnosti() {
       uzivatel_id: 1, // test user ID
       datum_rezervacie: selectedDate,
       zaciatok_rezervacie: startTime,
-      dlzka_rezervacie: duration
+      dlzka_rezervacie: duration,
     };
 
     try {
       const res = await fetch("http://localhost:5000/api/book-room", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
       if (res.ok) {
         alert(`✅ Reservation confirmed at ${startTime}`);
-        setRooms(prev =>
-          prev.map(r =>
+        setRooms((prev) =>
+          prev.map((r) =>
             r.miestnost_id === roomId ? { ...r, status: "occupied" } : r
           )
         );
@@ -66,6 +73,20 @@ export default function Miestnosti() {
   return (
     <div style={{ padding: "1rem" }}>
       <h2>Room Reservations</h2>
+
+      {/* Search bar */}
+      <div style={{ marginBottom: "1rem" }}>
+        <label>
+          🔍 Search room or address:
+          <input
+            type="text"
+            placeholder="e.g., A101 or Main Street"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ marginLeft: "0.5rem" }}
+          />
+        </label>
+      </div>
 
       {/* Date & Time selection */}
       <div style={{ marginBottom: "1rem" }}>
@@ -111,6 +132,13 @@ export default function Miestnosti() {
         <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
 
+      {/* Show next available slot if room is busy */}
+      {suggestedSlot && (
+        <div style={{ marginBottom: "1rem", color: "green" }}>
+          Next available slot for this room: <b>{suggestedSlot}</b>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <p>Loading...</p>
@@ -128,7 +156,7 @@ export default function Miestnosti() {
           </thead>
           <tbody>
             {filteredRooms.length > 0 ? (
-              filteredRooms.map(r => (
+              filteredRooms.map((r) => (
                 <tr key={r.miestnost_id}>
                   <td>{r.miestnost_id}</td>
                   <td>{r.cislo_miestnosti}</td>
@@ -137,7 +165,9 @@ export default function Miestnosti() {
                   <td>{r.status === "free" ? "Free" : "Occupied"}</td>
                   <td>
                     {r.status === "free" ? (
-                      <button onClick={() => handleBook(r.miestnost_id)}>Book</button>
+                      <button onClick={() => handleBook(r.miestnost_id)}>
+                        Book
+                      </button>
                     ) : (
                       "—"
                     )}
