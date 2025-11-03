@@ -42,33 +42,43 @@ app.get("/api/rooms", async (req, res) => {
     const searchText = search ? `%${search.toLowerCase()}%` : "%%";
 
     // Step 1: Find rooms filtered by search (room number, address or city)
-    const roomsQuery = `
-      SELECT 
-        m.miestnost_id,
-        m.cislo_miestnosti,
-        m.kapacita,
-        m.poschodie,
-        b.adresa,
-        b.mesto,
-        CASE 
-          WHEN EXISTS (
-            SELECT 1 FROM public.rezervacia r
-            WHERE r.miestnost_id = m.miestnost_id
-              AND r.datum_rezervacie = $1
-              AND $2::TIME >= r.zaciatok_rezervacie
-              AND $2::TIME < (r.zaciatok_rezervacie + r.dlzka_rezervacie)
-          )
-          THEN 'occupied'
-          ELSE 'free'
-        END AS status
-      FROM public.miestnost m
-      JOIN public.budova b ON m.budova_id = b.budova_id
-      WHERE LOWER(m.cislo_miestnosti) LIKE $3
-         OR LOWER(b.adresa) LIKE $3
-         OR LOWER(b.mesto) LIKE $3
-         OR $3 = '%%'
-      ORDER BY m.miestnost_id;
-    `;
+const roomsQuery = `
+  SELECT 
+    m.miestnost_id,
+    m.cislo_miestnosti,
+    m.kapacita,
+    m.poschodie,
+    b.adresa,
+    b.mesto,
+    (
+      SELECT r.rezervacia_id
+      FROM public.rezervacia r
+      WHERE r.miestnost_id = m.miestnost_id
+        AND r.datum_rezervacie = $1
+        AND $2::TIME >= r.zaciatok_rezervacie
+        AND $2::TIME < (r.zaciatok_rezervacie + r.dlzka_rezervacie)
+      LIMIT 1
+    ) AS active_rezervacia_id,
+    CASE 
+      WHEN EXISTS (
+        SELECT 1 FROM public.rezervacia r
+        WHERE r.miestnost_id = m.miestnost_id
+          AND r.datum_rezervacie = $1
+          AND $2::TIME >= r.zaciatok_rezervacie
+          AND $2::TIME < (r.zaciatok_rezervacie + r.dlzka_rezervacie)
+      )
+      THEN 'occupied'
+      ELSE 'free'
+    END AS status
+  FROM public.miestnost m
+  JOIN public.budova b ON m.budova_id = b.budova_id
+  WHERE LOWER(m.cislo_miestnosti) LIKE $3
+     OR LOWER(b.adresa) LIKE $3
+     OR LOWER(b.mesto) LIKE $3
+     OR $3 = '%%'
+  ORDER BY m.miestnost_id;
+`;
+
 
     const result = await pool.query(roomsQuery, [selectedDate, selectedTime, searchText]);
     const rooms = result.rows;
@@ -167,6 +177,60 @@ app.post("/api/book-room", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+/**
+ * GET /api/reservation/:id
+ * Returns details about a reservation (room number, date, and start time)
+ */
+app.get("/api/reservation/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const query = `
+      SELECT 
+        r.rezervacia_id,
+        r.datum_rezervacie,
+        r.zaciatok_rezervacie,
+        m.cislo_miestnosti
+      FROM public.rezervacia r
+      JOIN public.miestnost m ON m.miestnost_id = r.miestnost_id
+      WHERE r.rezervacia_id = $1
+    `;
+    const result = await pool.query(query, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Reservation not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error fetching reservation:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * DELETE /api/cancel-reservation/:id
+ * Cancels an existing reservation.
+ */
+app.delete("/api/cancel-reservation/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `DELETE FROM public.rezervacia WHERE rezervacia_id = $1 RETURNING rezervacia_id`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Reservation not found" });
+    }
+
+    res.json({ message: "Reservation canceled successfully" });
+  } catch (err) {
+    console.error("Error canceling reservation:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 
 // Start the server
 const port = process.env.PORT || 5000;

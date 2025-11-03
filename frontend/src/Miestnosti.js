@@ -31,44 +31,109 @@ export default function Miestnosti() {
     filter === "all" ? true : r.status === filter
   );
 
-  // Create a reservation
-  const handleBook = async (roomId) => {
-    const confirm = window.confirm(
-      `Reserve room ${roomId} on ${selectedDate} at ${startTime} for ${duration}?`
+const handleBook = async (roomId, customTime = null) => {
+  const bookingTime = customTime || startTime;
+  const confirm = window.confirm(
+    `Reserve room ${roomId} on ${selectedDate} at ${bookingTime} for ${duration}?`
+  );
+  if (!confirm) return;
+
+  const body = {
+    miestnost_id: roomId,
+    uzivatel_id: 1, // test user ID
+    datum_rezervacie: selectedDate,
+    zaciatok_rezervacie: bookingTime,
+    dlzka_rezervacie: duration,
+  };
+
+  try {
+    const res = await fetch("http://localhost:5000/api/book-room", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      alert(`✅ Reservation confirmed at ${bookingTime}`);
+
+      // ✅ Update the room immediately with new reservation info
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.miestnost_id === roomId
+            ? {
+                ...r,
+                status: "occupied",
+                active_rezervacia_id: data.rezervacia_id, // new line
+              }
+            : r
+        )
+      );
+    } else {
+      alert(`❌ ${data.error || "Reservation failed"}`);
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Server connection error");
+  }
+};
+
+
+const handleCancel = async (room) => {
+  if (!room.active_rezervacia_id) {
+    alert("❌ No active reservation found for this room");
+    return;
+  }
+
+  try {
+    // 🔹 Get reservation info before confirming
+    const resInfo = await fetch(
+      `http://localhost:5000/api/reservation/${room.active_rezervacia_id}`
     );
+    const info = await resInfo.json();
+
+    if (!resInfo.ok) {
+      alert(`❌ ${info.error || "Reservation not found"}`);
+      return;
+    }
+
+    // 🔹 Show details to the user
+    const confirm = window.confirm(
+      `Cancel reservation for room ${info.cislo_miestnosti}\n` +
+      `📅 Date: ${info.datum_rezervacie}\n` +
+      `⏰ Start time: ${info.zaciatok_rezervacie}\n\n` +
+      `Are you sure you want to cancel it?`
+    );
+
     if (!confirm) return;
 
-    const body = {
-      miestnost_id: roomId,
-      uzivatel_id: 1, // test user ID
-      datum_rezervacie: selectedDate,
-      zaciatok_rezervacie: startTime,
-      dlzka_rezervacie: duration,
-    };
+    // 🔹 Proceed to delete
+    const res = await fetch(
+      `http://localhost:5000/api/cancel-reservation/${room.active_rezervacia_id}`,
+      { method: "DELETE" }
+    );
+    const data = await res.json();
 
-    try {
-      const res = await fetch("http://localhost:5000/api/book-room", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        alert(`✅ Reservation confirmed at ${startTime}`);
-        setRooms((prev) =>
-          prev.map((r) =>
-            r.miestnost_id === roomId ? { ...r, status: "occupied" } : r
-          )
-        );
-      } else {
-        alert(`❌ ${data.error || "Reservation failed"}`);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Server connection error");
+    if (res.ok) {
+      alert("✅ Reservation canceled");
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.miestnost_id === room.miestnost_id
+            ? { ...r, status: "free", active_rezervacia_id: null }
+            : r
+        )
+      );
+    } else {
+      alert(`❌ ${data.error || "Cancelation failed"}`);
     }
-  };
+  } catch (err) {
+    console.error(err);
+    alert("Server connection error");
+  }
+};
+
+
+
 
   return (
     <div style={{ padding: "1rem" }}>
@@ -110,19 +175,21 @@ export default function Miestnosti() {
           />
         </label>
 
-        <label style={{ marginLeft: "1rem" }}>
-          ⏳ Duration:
-          <select
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            style={{ marginLeft: "0.5rem" }}
-          >
-            <option value="30 minutes">30 minutes</option>
-            <option value="1 hour">1 hour</option>
-            <option value="2 hours">2 hours</option>
-            <option value="3 hours">3 hours</option>
-          </select>
-        </label>
+      <label style={{ marginLeft: "1rem" }}>
+       ⏳ Duration:
+        <select
+        value={duration} 
+        onChange={(e) => setDuration(e.target.value)}
+        style={{ marginLeft: "0.5rem" }}
+         >
+        <option value="15 minutes">15 minutes</option>
+        <option value="30 minutes">30 minutes</option>
+        <option value="1 hour">1 hour</option>
+        <option value="1.5 hours">1.5 hours</option>
+        <option value="2 hours">2 hours</option>
+        <option value="24 hours">Whole day</option>
+        </select>
+      </label>
       </div>
 
       {/* Filters */}
@@ -132,12 +199,18 @@ export default function Miestnosti() {
         <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
 
-      {/* Show next available slot if room is busy */}
       {suggestedSlot && (
-        <div style={{ marginBottom: "1rem", color: "green" }}>
-          Next available slot for this room: <b>{suggestedSlot}</b>
-        </div>
-      )}
+      <div style={{ marginBottom: "1rem", color: "green" }}>
+        Next available slot for this room: <b>{suggestedSlot}</b>{" "}
+        <button
+        style={{ marginLeft: "0.5rem" }}
+        onClick={() => handleBook(rooms[0].miestnost_id, suggestedSlot)}
+        >
+        Reserve this slot
+        </button>
+      </div>
+    )}
+
 
       {/* Table */}
       {loading ? (
@@ -165,11 +238,11 @@ export default function Miestnosti() {
                   <td>{r.status === "free" ? "Free" : "Occupied"}</td>
                   <td>
                     {r.status === "free" ? (
-                      <button onClick={() => handleBook(r.miestnost_id)}>
-                        Book
-                      </button>
+                    <button onClick={() => handleBook(r.miestnost_id)}>Book</button>
                     ) : (
-                      "—"
+                    <>
+                    <button onClick={() => handleCancel(r)}>Cancel</button>
+                    </>
                     )}
                   </td>
                 </tr>
