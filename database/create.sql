@@ -24,13 +24,25 @@ CREATE TABLE public.miestnost (
 );
 
 -- ===============================
+--  ROLE TABLE
+-- ===============================
+CREATE TABLE public.rola (
+  rola_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nazov VARCHAR(20) UNIQUE NOT NULL
+);
+
+INSERT INTO public.rola (nazov) VALUES ('viewer'), ('employer'), ('admin');
+
+-- ===============================
 --  USER TABLE
 -- ===============================
 CREATE TABLE public.uzivatel (
   uzivatel_id     INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   meno            VARCHAR(20) NOT NULL, -- First name
   priezvisko      VARCHAR(20) NOT NULL, -- Last name
-  personal_number VARCHAR(20) NOT NULL UNIQUE -- Unique personal ID
+  personal_number VARCHAR(20) NOT NULL UNIQUE, -- Unique personal ID
+  rola_id         INTEGER REFERENCES public.rola(rola_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 -- ===============================
@@ -41,7 +53,7 @@ CREATE TABLE public.rezervacia (
   miestnost_id        INTEGER NOT NULL,           -- Linked room
   datum_vytvorenia    DATE    NOT NULL,           -- Date the reservation was created
   datum_rezervacie    DATE    NOT NULL,           -- Date of the reservation
-  zaciatok_rezervacie TIME    NOT NULL DEFAULT '00:00', -- Start time of the reservation (NEW)
+  zaciatok_rezervacie TIME    NOT NULL DEFAULT '00:00', -- Start time of the reservation
   dlzka_rezervacie    INTERVAL NOT NULL CHECK (dlzka_rezervacie > INTERVAL '0 minutes'), -- Duration
   uzivatel_id         INTEGER NOT NULL,           -- Linked user
   CONSTRAINT fk_rezervacia_miestnost

@@ -24,9 +24,9 @@
 
 &nbsp;  PGUSER=postgres
 
-&nbsp;  PGPASSWORD=your\_password
+&nbsp;  PGPASSWORD=admin
 
-&nbsp;  PGDATABASE=your\_database
+&nbsp;  PGDATABASE=db
 
 &nbsp;  PGPORT=5432
 

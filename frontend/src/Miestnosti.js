@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export default function Miestnosti() {
+export default function Miestnosti({ canBook = false, canDelete = false }) {
   const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -9,131 +9,143 @@ export default function Miestnosti() {
   );
   const [startTime, setStartTime] = useState("09:00");
   const [duration, setDuration] = useState("1 hour");
-  const [search, setSearch] = useState(""); // Room or address search input
-  const [suggestedSlot, setSuggestedSlot] = useState(null); // Next free time suggestion
+  const [search, setSearch] = useState("");
+  const [suggestedSlot, setSuggestedSlot] = useState(null);
 
-  // Fetch available rooms for a given date and time
+  const token = localStorage.getItem("token");
+
+  // Fetch rooms
   useEffect(() => {
     setLoading(true);
     fetch(
-      `http://localhost:5000/api/rooms?date=${selectedDate}&time=${startTime}&search=${search}`
+      `http://localhost:5000/api/rooms?date=${selectedDate}&time=${startTime}&search=${search}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
     )
       .then((res) => res.json())
       .then((data) => {
-        setRooms(data.rooms || []);
-        setSuggestedSlot(data.nextFreeSlot || null); // server may include suggestion
-      })
+  // ak backend vráti priamo pole
+  if (Array.isArray(data)) {
+    setRooms(data);
+  } else {
+    setRooms(data.rooms || []);
+    setSuggestedSlot(data.nextFreeSlot || null);
+  }
+})
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
-  }, [selectedDate, startTime, search]);
+  }, [selectedDate, startTime, search, token]);
 
   const filteredRooms = rooms.filter((r) =>
     filter === "all" ? true : r.status === filter
   );
 
-const handleBook = async (roomId, customTime = null) => {
-  const bookingTime = customTime || startTime;
-  const confirm = window.confirm(
-    `Reserve room ${roomId} on ${selectedDate} at ${bookingTime} for ${duration}?`
-  );
-  if (!confirm) return;
+  // Rezervácia
+  const handleBook = async (roomId, customTime = null) => {
+    const bookingTime = customTime || startTime;
+    const confirm = window.confirm(
+      `Reserve room ${roomId} on ${selectedDate} at ${bookingTime} for ${duration}?`
+    );
+    if (!confirm) return;
 
-  const body = {
-    miestnost_id: roomId,
-    uzivatel_id: 1, // test user ID
-    datum_rezervacie: selectedDate,
-    zaciatok_rezervacie: bookingTime,
-    dlzka_rezervacie: duration,
+    const body = {
+      miestnost_id: roomId,
+      datum_rezervacie: selectedDate,
+      zaciatok_rezervacie: bookingTime,
+      dlzka_rezervacie: duration,
+    };
+
+    try {
+      const res = await fetch("http://localhost:5000/api/book-room", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ Reservation confirmed at ${bookingTime}`);
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.miestnost_id === roomId
+              ? { ...r, status: "occupied", active_rezervacia_id: data.rezervacia_id }
+              : r
+          )
+        );
+      } else {
+        alert(`❌ ${data.error || "Reservation failed"}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Server connection error");
+    }
   };
 
-  try {
-    const res = await fetch("http://localhost:5000/api/book-room", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-    if (res.ok) {
-      alert(`✅ Reservation confirmed at ${bookingTime}`);
-
-      // ✅ Update the room immediately with new reservation info
-      setRooms((prev) =>
-        prev.map((r) =>
-          r.miestnost_id === roomId
-            ? {
-                ...r,
-                status: "occupied",
-                active_rezervacia_id: data.rezervacia_id, // new line
-              }
-            : r
-        )
-      );
-    } else {
-      alert(`❌ ${data.error || "Reservation failed"}`);
-    }
-  } catch (err) {
-    console.error(err);
-    alert("Server connection error");
-  }
-};
-
-
-const handleCancel = async (room) => {
-  if (!room.active_rezervacia_id) {
-    alert("❌ No active reservation found for this room");
-    return;
-  }
-
-  try {
-    // 🔹 Get reservation info before confirming
-    const resInfo = await fetch(
-      `http://localhost:5000/api/reservation/${room.active_rezervacia_id}`
-    );
-    const info = await resInfo.json();
-
-    if (!resInfo.ok) {
-      alert(`❌ ${info.error || "Reservation not found"}`);
+  // Zrušenie rezervácie
+  const handleCancel = async (room) => {
+    if (!room.active_rezervacia_id) {
+      alert("❌ No active reservation found for this room");
       return;
     }
 
-    // 🔹 Show details to the user
-    const confirm = window.confirm(
-      `Cancel reservation for room ${info.cislo_miestnosti}\n` +
-      `📅 Date: ${info.datum_rezervacie}\n` +
-      `⏰ Start time: ${info.zaciatok_rezervacie}\n\n` +
-      `Are you sure you want to cancel it?`
-    );
-
-    if (!confirm) return;
-
-    // 🔹 Proceed to delete
-    const res = await fetch(
-      `http://localhost:5000/api/cancel-reservation/${room.active_rezervacia_id}`,
-      { method: "DELETE" }
-    );
-    const data = await res.json();
-
-    if (res.ok) {
-      alert("✅ Reservation canceled");
-      setRooms((prev) =>
-        prev.map((r) =>
-          r.miestnost_id === room.miestnost_id
-            ? { ...r, status: "free", active_rezervacia_id: null }
-            : r
-        )
+    try {
+      const resInfo = await fetch(
+        `http://localhost:5000/api/reservation/${room.active_rezervacia_id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
-    } else {
-      alert(`❌ ${data.error || "Cancelation failed"}`);
+      const info = await resInfo.json();
+
+      if (!resInfo.ok) {
+        alert(`❌ ${info.error || "Reservation not found"}`);
+        return;
+      }
+
+      const confirm = window.confirm(
+        `Cancel reservation for room ${info.cislo_miestnosti}\n` +
+          `📅 Date: ${info.datum_rezervacie}\n` +
+          `⏰ Start time: ${info.zaciatok_rezervacie}\n\n` +
+          `Are you sure you want to cancel it?`
+      );
+      if (!confirm) return;
+
+      const res = await fetch(
+        `http://localhost:5000/api/cancel-reservation/${room.active_rezervacia_id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      const data = await res.json();
+
+      if (res.ok) {
+        alert("✅ Reservation canceled");
+        setRooms((prev) =>
+          prev.map((r) =>
+            r.miestnost_id === room.miestnost_id
+              ? { ...r, status: "free", active_rezervacia_id: null }
+              : r
+          )
+        );
+      } else {
+        alert(`❌ ${data.error || "Cancelation failed"}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Server connection error");
     }
-  } catch (err) {
-    console.error(err);
-    alert("Server connection error");
-  }
-};
-
-
-
+  };
 
   return (
     <div style={{ padding: "1rem" }}>
@@ -175,21 +187,21 @@ const handleCancel = async (room) => {
           />
         </label>
 
-      <label style={{ marginLeft: "1rem" }}>
-       ⏳ Duration:
-        <select
-        value={duration} 
-        onChange={(e) => setDuration(e.target.value)}
-        style={{ marginLeft: "0.5rem" }}
-         >
-        <option value="15 minutes">15 minutes</option>
-        <option value="30 minutes">30 minutes</option>
-        <option value="1 hour">1 hour</option>
-        <option value="1.5 hours">1.5 hours</option>
-        <option value="2 hours">2 hours</option>
-        <option value="24 hours">Whole day</option>
-        </select>
-      </label>
+        <label style={{ marginLeft: "1rem" }}>
+          ⏳ Duration:
+          <select
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            style={{ marginLeft: "0.5rem" }}
+          >
+            <option value="15 minutes">15 minutes</option>
+            <option value="30 minutes">30 minutes</option>
+            <option value="1 hour">1 hour</option>
+            <option value="1.5 hours">1.5 hours</option>
+            <option value="2 hours">2 hours</option>
+            <option value="24 hours">Whole day</option>
+          </select>
+        </label>
       </div>
 
       {/* Filters */}
@@ -198,19 +210,6 @@ const handleCancel = async (room) => {
         <button onClick={() => setFilter("free")}>Free</button>
         <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
-
-      {suggestedSlot && (
-      <div style={{ marginBottom: "1rem", color: "green" }}>
-        Next available slot for this room: <b>{suggestedSlot}</b>{" "}
-        <button
-        style={{ marginLeft: "0.5rem" }}
-        onClick={() => handleBook(rooms[0].miestnost_id, suggestedSlot)}
-        >
-        Reserve this slot
-        </button>
-      </div>
-    )}
-
 
       {/* Table */}
       {loading ? (
@@ -237,12 +236,11 @@ const handleCancel = async (room) => {
                   <td>{r.poschodie}</td>
                   <td>{r.status === "free" ? "Free" : "Occupied"}</td>
                   <td>
-                    {r.status === "free" ? (
-                    <button onClick={() => handleBook(r.miestnost_id)}>Book</button>
-                    ) : (
-                    <>
-                    <button onClick={() => handleCancel(r)}>Cancel</button>
-                    </>
+                    {r.status === "free" && canBook && (
+                      <button onClick={() => handleBook(r.miestnost_id)}>Book</button>
+                    )}
+                    {r.status === "occupied" && canDelete && (
+                      <button onClick={() => handleCancel(r)}>Cancel</button>
                     )}
                   </td>
                 </tr>
