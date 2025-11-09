@@ -49,6 +49,7 @@
 &nbsp;  ```bash
 
 &nbsp;  npm install
+&nbsp;  npm install passport-github2
 
 &nbsp;  ```
 
