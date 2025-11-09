@@ -1,52 +1,59 @@
 BEGIN;
 
--- (1) BUILDINGS
+-- ===============================
+--  BUILDINGS
+-- ===============================
 INSERT INTO public.budova (adresa, mesto) VALUES
-  ('Letn· 9',        'Koöice'),
-  ('Technick· 1',    'Koöice'),
-  ('Trieda SNP 1',   'Koöice'),
-  ('Hlavn· 15',      'Koöice'),
-  ('Watsonova 47',   'Koöice');
+  ('Letn√° 9',        'Ko≈°ice'),
+  ('Technick√° 1',    'Ko≈°ice'),
+  ('Trieda SNP 1',   'Ko≈°ice'),
+  ('Hlavn√° 15',      'Ko≈°ice'),
+  ('Watsonova 47',   'Ko≈°ice');
 
--- (2) ROOMS
+-- ===============================
+--  ROOMS
+-- ===============================
 INSERT INTO public.miestnost (cislo_miestnosti, kapacita, poschodie, budova_id) VALUES
-  ('A101', 20, 1, (SELECT budova_id FROM public.budova WHERE adresa = 'Letn· 9')),
-  ('A102', 12, 1, (SELECT budova_id FROM public.budova WHERE adresa = 'Letn· 9')),
-  ('B201', 30, 2, (SELECT budova_id FROM public.budova WHERE adresa = 'Technick· 1')),
+  ('A101', 20, 1, (SELECT budova_id FROM public.budova WHERE adresa = 'Letn√° 9')),
+  ('A102', 12, 1, (SELECT budova_id FROM public.budova WHERE adresa = 'Letn√° 9')),
+  ('B201', 30, 2, (SELECT budova_id FROM public.budova WHERE adresa = 'Technick√° 1')),
   ('C301', 25, 3, (SELECT budova_id FROM public.budova WHERE adresa = 'Watsonova 47')),
-  ('D105', 10, 1, (SELECT budova_id FROM public.budova WHERE adresa = 'Hlavn· 15'));
+  ('D105', 10, 1, (SELECT budova_id FROM public.budova WHERE adresa = 'Hlavn√° 15'));
 
--- (3) USERS
-INSERT INTO public.uzivatel (meno, priezvisko, personal_number) VALUES
-  ('Nikita',     'Kuropatkin',   'KE-0001'),
-  ('Tibor',      'Olearnik',     'KE-0002'),
-  ('Juraj',      'Pjescak',      'KE-0003'),
-  ('Nikodem',    'Simonak',      'KE-0004'),
-  ('Karolina',   'Polackova',    'KE-0005');
+-- ===============================
+--  USERS (backend expects meno, email, rola_id)
+-- ===============================
+INSERT INTO public.uzivatel (meno, email, rola_id) VALUES
+  ('Nikita Kuropatkin',  'nikita@example.com',   (SELECT rola_id FROM public.rola WHERE nazov = 'admin')),
+  ('Tibor Olearnik',     'tibor@example.com',    (SELECT rola_id FROM public.rola WHERE nazov = 'employer')),
+  ('Juraj Pjescak',      'juraj@example.com',    (SELECT rola_id FROM public.rola WHERE nazov = 'viewer')),
+  ('Nikodem Simonak',    'nikodem@example.com',  (SELECT rola_id FROM public.rola WHERE nazov = 'viewer')),
+  ('Karolina Polackova', 'karolina@example.com', (SELECT rola_id FROM public.rola WHERE nazov = 'viewer'));
 
--- (4) RESERVATIONS
--- Each reservation includes date, start time, duration, and linked user
+-- ===============================
+--  RESERVATIONS
+-- ===============================
 INSERT INTO public.rezervacia
   (miestnost_id, datum_vytvorenia, datum_rezervacie, zaciatok_rezervacie, dlzka_rezervacie, uzivatel_id)
 VALUES
   ((SELECT miestnost_id FROM public.miestnost WHERE cislo_miestnosti = 'A101'),
-    DATE '2025-10-20', DATE '2025-10-28', TIME '11:00', INTERVAL '2 hours',
-    (SELECT uzivatel_id FROM public.uzivatel WHERE personal_number = 'KE-0001')),
+    CURRENT_DATE, DATE '2025-10-28', TIME '11:00', INTERVAL '2 hours',
+    (SELECT uzivatel_id FROM public.uzivatel WHERE email = 'nikita@example.com')),
 
   ((SELECT miestnost_id FROM public.miestnost WHERE cislo_miestnosti = 'A102'),
-    DATE '2025-10-21', DATE '2025-10-29', TIME '09:00', INTERVAL '1 hour 30 minutes',
-    (SELECT uzivatel_id FROM public.uzivatel WHERE personal_number = 'KE-0002')),
+    CURRENT_DATE, DATE '2025-10-29', TIME '09:00', INTERVAL '1 hour 30 minutes',
+    (SELECT uzivatel_id FROM public.uzivatel WHERE email = 'tibor@example.com')),
 
   ((SELECT miestnost_id FROM public.miestnost WHERE cislo_miestnosti = 'B201'),
-    DATE '2025-10-22', DATE '2025-11-02', TIME '14:30', INTERVAL '3 hours',
-    (SELECT uzivatel_id FROM public.uzivatel WHERE personal_number = 'KE-0003')),
+    CURRENT_DATE, DATE '2025-11-02', TIME '14:30', INTERVAL '3 hours',
+    (SELECT uzivatel_id FROM public.uzivatel WHERE email = 'juraj@example.com')),
 
   ((SELECT miestnost_id FROM public.miestnost WHERE cislo_miestnosti = 'C301'),
-    DATE '2025-10-23', DATE '2025-11-03', TIME '08:00', INTERVAL '45 minutes',
-    (SELECT uzivatel_id FROM public.uzivatel WHERE personal_number = 'KE-0004')),
+    CURRENT_DATE, DATE '2025-11-03', TIME '08:00', INTERVAL '45 minutes',
+    (SELECT uzivatel_id FROM public.uzivatel WHERE email = 'nikodem@example.com')),
 
   ((SELECT miestnost_id FROM public.miestnost WHERE cislo_miestnosti = 'D105'),
-    DATE '2025-10-24', DATE '2025-11-04', TIME '16:00', INTERVAL '1 hour',
-    (SELECT uzivatel_id FROM public.uzivatel WHERE personal_number = 'KE-0005'));
+    CURRENT_DATE, DATE '2025-11-04', TIME '16:00', INTERVAL '1 hour',
+    (SELECT uzivatel_id FROM public.uzivatel WHERE email = 'karolina@example.com'));
 
 COMMIT;
