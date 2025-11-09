@@ -49,11 +49,13 @@
 &nbsp;  ```bash
 
 &nbsp;  npm install
+
+&nbsp;  ```
+&nbsp;  ```bash
+
 &nbsp;  npm install passport-github2
 
 &nbsp;  ```
-
-
 
 3\. Uprav súbor `.env` (nastav názov databázy a heslo podľa svojho PostgreSQL):
 
