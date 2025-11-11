@@ -42,7 +42,7 @@ pool.connect()
 passport.use(new GitHubStrategy({
   clientID: process.env.GITHUB_CLIENT_ID,
   clientSecret: process.env.GITHUB_CLIENT_SECRET,
-  callbackURL: "https://book-my-room-pn00.onrender.com/auth/github/callback"
+  callbackURL: process.env.BACKEND_URL + "/auth/github/callback"
 }, async (accessToken, refreshToken, profile, done) => {
   try {
     const email = profile.emails?.[0]?.value || `${profile.username}@github.local`;
