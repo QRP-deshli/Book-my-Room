@@ -27,16 +27,14 @@ app.use(passport.session());
 
 // PostgreSQL connection
 const pool = new Pool({
-  host: process.env.PGHOST,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-  database: process.env.PGDATABASE,
-  port: process.env.PGPORT,
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false } // Render vyžaduje SSL
 });
 
 pool.connect()
   .then(() => console.log("✅ Connected to PostgreSQL"))
   .catch(err => console.error("❌ Database connection failed:", err));
+
 
 // ===============================
 // GITHUB OAUTH STRATEGY
