@@ -27,16 +27,14 @@ app.use(passport.session());
 
 // PostgreSQL connection
 const pool = new Pool({
-  host: process.env.PGHOST,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-  database: process.env.PGDATABASE,
-  port: process.env.PGPORT,
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false } // Render vyžaduje SSL
 });
 
 pool.connect()
   .then(() => console.log("✅ Connected to PostgreSQL"))
   .catch(err => console.error("❌ Database connection failed:", err));
+
 
 // ===============================
 // GITHUB OAUTH STRATEGY
@@ -44,7 +42,7 @@ pool.connect()
 passport.use(new GitHubStrategy({
   clientID: process.env.GITHUB_CLIENT_ID,
   clientSecret: process.env.GITHUB_CLIENT_SECRET,
-  callbackURL: "http://localhost:5000/auth/github/callback"
+  callbackURL: process.env.BACKEND_URL + "/auth/github/callback"
 }, async (accessToken, refreshToken, profile, done) => {
   try {
     const email = profile.emails?.[0]?.value || `${profile.username}@github.local`;
