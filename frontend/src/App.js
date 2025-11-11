@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 import Miestnosti from "./Miestnosti";
-import Login from "./Login";
 
 function App() {
   const [role, setRole] = useState("viewer");
@@ -41,7 +40,7 @@ function App() {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/admin/add-user", {
+      const res = await fetch("https://book-my-room-pn00.onrender.com/api/admin/add-user", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -75,7 +74,7 @@ function App() {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/admin/add-room", {
+      const res = await fetch("https://book-my-room-pn00.onrender.com/api/admin/add-room", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -108,7 +107,7 @@ function App() {
 <p>Role: <b>{role}</b></p>
 
 {!localStorage.getItem("token") ? (
-  <button onClick={() => (window.location.href = "http://localhost:5000/auth/github")}>
+  <button onClick={() => (window.location.href = "https://book-my-room-pn00.onrender.com/auth/github")}>
     Prihlásiť sa cez GitHub
   </button>
 ) : (

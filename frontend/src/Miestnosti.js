@@ -18,7 +18,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
   useEffect(() => {
     setLoading(true);
     fetch(
-      `http://localhost:5000/api/rooms?date=${selectedDate}&time=${startTime}&search=${search}`,
+      `https://book-my-room-pn00.onrender.com/api/rooms?date=${selectedDate}&time=${startTime}&search=${search}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -59,7 +59,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
     };
 
     try {
-      const res = await fetch("http://localhost:5000/api/book-room", {
+      const res = await fetch("https://book-my-room-pn00.onrender.com/api/book-room", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -96,7 +96,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
 
     try {
       const resInfo = await fetch(
-        `http://localhost:5000/api/reservation/${room.active_rezervacia_id}`,
+        `https://book-my-room-pn00.onrender.com/api/reservation/${room.active_rezervacia_id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -119,7 +119,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
       if (!confirm) return;
 
       const res = await fetch(
-        `http://localhost:5000/api/cancel-reservation/${room.active_rezervacia_id}`,
+        `https://book-my-room-pn00.onrender.com/api/cancel-reservation/${room.active_rezervacia_id}`,
         {
           method: "DELETE",
           headers: {
