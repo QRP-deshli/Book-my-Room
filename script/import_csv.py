@@ -6,9 +6,9 @@ import sys
 # Konfigurácia databázy
 DB_CONFIG = {
     'host': 'localhost',
-    'database': 'BookMyRoom',
+    'database': 'bmr_db',
     'user': 'postgres',
-    'password': 'heslo'
+    'password': 'feetlover'
 }
 
 def connect_db():

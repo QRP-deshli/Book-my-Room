@@ -4,7 +4,7 @@ import Miestnosti from "./Miestnosti";
 import Login from "./Login";
 
 function App() {
-  const [role, setRole] = useState(null);
+  const [role, setRole] = useState("viewer");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -24,7 +24,7 @@ function App() {
 
   const logout = () => {
     localStorage.removeItem("token");
-    setRole(null);
+    setRole("viewer");
   };
 
   const token = localStorage.getItem("token");
@@ -101,15 +101,20 @@ function App() {
     }
   };
 
-  if (!role) return <Login />;
 
   return (
     <div className="App">
       <h1>BookMyRoom</h1>
-      <p>
-        Rola: <b>{role}</b>
-      </p>
-      <button onClick={logout}>Odhlásiť</button>
+<p>Role: <b>{role}</b></p>
+
+{!localStorage.getItem("token") ? (
+  <button onClick={() => (window.location.href = "http://localhost:5000/auth/github")}>
+    Prihlásiť sa cez GitHub
+  </button>
+) : (
+  <button onClick={logout}>Odhlásiť</button>
+)}
+
 
       {role === "viewer" && (
         <>

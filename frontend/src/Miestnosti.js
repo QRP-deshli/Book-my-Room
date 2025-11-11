@@ -211,6 +211,22 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
         <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
 
+      {/* Show next available slot for this room */}
+{suggestedSlot && (
+  <div style={{ marginBottom: "1rem", color: "green" }}>
+    Next available slot for this room: <b>{suggestedSlot}</b>{" "}
+    {canBook && (
+      <button
+        style={{ marginLeft: "0.5rem" }}
+        onClick={() => handleBook(rooms[0].miestnost_id, suggestedSlot)}
+      >
+        Reserve this slot
+      </button>
+    )}
+  </div>
+)}
+
+
       {/* Table */}
       {loading ? (
         <p>Loading...</p>
@@ -218,7 +234,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
         <table border="1" cellPadding="8" width="100%">
           <thead>
             <tr>
-              <th>ID</th>
+              
               <th>Room</th>
               <th>Capacity</th>
               <th>Floor</th>
@@ -230,7 +246,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
             {filteredRooms.length > 0 ? (
               filteredRooms.map((r) => (
                 <tr key={r.miestnost_id}>
-                  <td>{r.miestnost_id}</td>
+                  
                   <td>{r.cislo_miestnosti}</td>
                   <td>{r.kapacita}</td>
                   <td>{r.poschodie}</td>

@@ -124,6 +124,20 @@ function verifyToken(req, res, next) {
   }
 }
 
+// Optional auth middleware — allows both guest and logged users
+function optionalAuth(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) return next();
+  const token = authHeader.split(" ")[1];
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET || "jwtsecret");
+  } catch {
+    // ignore invalid tokens
+  }
+  next();
+}
+
+
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
@@ -133,10 +147,7 @@ function requireRole(...roles) {
   };
 }
 
-// ===============================
-// API ROUTES
-// ===============================
-app.get("/api/rooms", async (req, res) => {
+app.get("/api/rooms", optionalAuth, async (req, res) => {
   try {
     const { date, time, search } = req.query;
     const selectedDate = date || new Date().toISOString().slice(0, 10);
@@ -144,41 +155,68 @@ app.get("/api/rooms", async (req, res) => {
     const searchText = search ? `%${search.toLowerCase()}%` : "%%";
 
     const roomsQuery = `
-  SELECT 
-    m.miestnost_id,
-    m.cislo_miestnosti,
-    m.kapacita,
-    m.poschodie,
-    b.adresa,
-    b.mesto,
-    r.rezervacia_id AS active_rezervacia_id,
-    CASE 
-      WHEN r.rezervacia_id IS NOT NULL THEN 'occupied'
-      ELSE 'free'
-    END AS status
-  FROM public.miestnost m
-  JOIN public.budova b ON m.budova_id = b.budova_id
-  LEFT JOIN public.rezervacia r
-    ON r.miestnost_id = m.miestnost_id
-    AND r.datum_rezervacie = $1
-    AND $2::TIME >= r.zaciatok_rezervacie
-    AND $2::TIME < (r.zaciatok_rezervacie + r.dlzka_rezervacie)
-  WHERE LOWER(m.cislo_miestnosti) LIKE $3
-     OR LOWER(b.adresa) LIKE $3
-     OR LOWER(b.mesto) LIKE $3
-     OR $3 = '%%'
-  ORDER BY m.miestnost_id;
-`;
-
-
+      SELECT 
+        m.miestnost_id,
+        m.cislo_miestnosti,
+        m.kapacita,
+        m.poschodie,
+        b.adresa,
+        b.mesto,
+        r.rezervacia_id AS active_rezervacia_id,
+        CASE 
+          WHEN r.rezervacia_id IS NOT NULL THEN 'occupied'
+          ELSE 'free'
+        END AS status
+      FROM public.miestnost m
+      JOIN public.budova b ON m.budova_id = b.budova_id
+      LEFT JOIN public.rezervacia r
+        ON r.miestnost_id = m.miestnost_id
+        AND r.datum_rezervacie = $1
+        AND $2::TIME >= r.zaciatok_rezervacie
+        AND $2::TIME < (r.zaciatok_rezervacie + r.dlzka_rezervacie)
+      WHERE LOWER(m.cislo_miestnosti) LIKE $3
+         OR LOWER(b.adresa) LIKE $3
+         OR LOWER(b.mesto) LIKE $3
+         OR $3 = '%%'
+      ORDER BY m.miestnost_id;
+    `;
 
     const result = await pool.query(roomsQuery, [selectedDate, selectedTime, searchText]);
-    res.json(result.rows);
+    const rooms = result.rows;
+
+    // ✅ Suggest next available slot if one specific room is searched and occupied
+    let nextFreeSlot = null;
+    if (search && rooms.length === 1 && rooms[0].status === "occupied") {
+      const roomId = rooms[0].miestnost_id;
+
+      const nextSlotQuery = `
+  SELECT (r2.zaciatok_rezervacie + r2.dlzka_rezervacie) AS free_after
+  FROM public.rezervacia r2
+  WHERE r2.miestnost_id = $1
+    AND r2.datum_rezervacie = $2
+    AND r2.zaciatok_rezervacie >= $3::TIME
+    AND NOT EXISTS (
+      SELECT 1 FROM public.rezervacia r3
+      WHERE r3.miestnost_id = r2.miestnost_id
+        AND r3.datum_rezervacie = r2.datum_rezervacie
+        AND r3.zaciatok_rezervacie < (r2.zaciatok_rezervacie + r2.dlzka_rezervacie)
+        AND (r3.zaciatok_rezervacie + r3.dlzka_rezervacie) > (r2.zaciatok_rezervacie + r2.dlzka_rezervacie)
+    )
+  ORDER BY r2.zaciatok_rezervacie
+  LIMIT 1;
+`;
+
+      const slotRes = await pool.query(nextSlotQuery, [roomId, selectedDate, selectedTime]);
+      if (slotRes.rows.length > 0) nextFreeSlot = slotRes.rows[0].free_after;
+    }
+
+    res.json({ rooms, nextFreeSlot });
   } catch (err) {
     console.error("Error fetching rooms:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 app.post("/api/book-room", verifyToken, requireRole("employer", "admin"), async (req, res) => {
   try {
@@ -233,6 +271,7 @@ app.post("/api/book-room", verifyToken, requireRole("employer", "admin"), async 
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 // GET reservation by ID
 app.get("/api/reservation/:id", verifyToken, async (req, res) => {
   try {
@@ -255,6 +294,32 @@ app.get("/api/reservation/:id", verifyToken, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// Public: get today's schedule for a specific room
+app.get("/api/room-schedule/:roomId", async (req, res) => {
+  try {
+    const id = parseInt(req.params.roomId);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid room ID" });
+
+    const query = `
+      SELECT r.rezervacia_id, r.datum_rezervacie, r.zaciatok_rezervacie,
+             r.dlzka_rezervacie, u.meno AS user_name
+      FROM public.rezervacia r
+      JOIN public.uzivatel u ON r.uzivatel_id = u.uzivatel_id
+      WHERE r.miestnost_id = $1
+        AND r.datum_rezervacie = CURRENT_DATE
+      ORDER BY r.zaciatok_rezervacie;
+    `;
+
+    const result = await pool.query(query, [id]);
+    res.json({ reservations: result.rows });
+  } catch (err) {
+    console.error("Error fetching room day plan:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
 
 app.delete("/api/cancel-reservation/:id", verifyToken, requireRole("employer", "admin"), async (req, res) => {
   try {
