@@ -101,7 +101,7 @@ app.get("/auth/github/callback",
       process.env.JWT_SECRET || "jwtsecret",
       { expiresIn: "1h" }
     );
-    res.redirect(`http://localhost:3000?token=${token}`);
+    res.redirect(`${process.env.FRONTEND_URL}/?token=${token}`);
   }
 );
 
