@@ -8,7 +8,7 @@
 
 1\. Stiahni a nainštaluj PostgreSQL (verzia 18 alebo novšia):  
 
-&nbsp;  👉 \[https://www.postgresql.org/download/](https://www.postgresql.org/download/)
+&nbsp;   \[https://www.postgresql.org/download/](https://www.postgresql.org/download/)
 
 
 
