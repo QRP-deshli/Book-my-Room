@@ -1,59 +1,60 @@
 BEGIN;
 
 -- ===============================
---  BUILDING TABLE
+--  BUILDINGS TABLE
 -- ===============================
-CREATE TABLE public.budova (
-  budova_id  SERIAL PRIMARY KEY,
-  adresa     VARCHAR(50) NOT NULL,
-  mesto      VARCHAR(50) NOT NULL
+CREATE TABLE public.buildings (
+  building_id SERIAL PRIMARY KEY,
+  address     VARCHAR(50) NOT NULL,
+  city        VARCHAR(50) NOT NULL
 );
 
 -- ===============================
---  ROOM TABLE
+--  ROOMS TABLE
 -- ===============================
-CREATE TABLE public.miestnost (
-  miestnost_id     SERIAL PRIMARY KEY,
-  cislo_miestnosti VARCHAR(20) NOT NULL,
-  kapacita         INTEGER     NOT NULL CHECK (kapacita >= 0),
-  poschodie        INTEGER     NOT NULL,
-  budova_id        INTEGER     NOT NULL REFERENCES public.budova(budova_id)
+CREATE TABLE public.rooms (
+  room_id        SERIAL PRIMARY KEY,
+  room_number    VARCHAR(20) NOT NULL,
+  capacity       INTEGER     NOT NULL CHECK (capacity >= 0),
+  floor          INTEGER     NOT NULL,
+  building_id    INTEGER     NOT NULL REFERENCES public.buildings(building_id)
     ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
 -- ===============================
---  ROLE TABLE
+--  ROLES TABLE
 -- ===============================
-CREATE TABLE public.rola (
-  rola_id SERIAL PRIMARY KEY,
-  nazov   VARCHAR(20) UNIQUE NOT NULL
+CREATE TABLE public.roles (
+  role_id SERIAL PRIMARY KEY,
+  name    VARCHAR(20) UNIQUE NOT NULL
 );
 
-INSERT INTO public.rola (nazov) VALUES ('viewer'), ('employer'), ('admin');
+INSERT INTO public.roles (name)
+VALUES ('viewer'), ('employer'), ('admin');
 
 -- ===============================
---  USER TABLE
+--  USERS TABLE
 -- ===============================
-CREATE TABLE public.uzivatel (
-  uzivatel_id SERIAL PRIMARY KEY,
-  meno        VARCHAR(100) NOT NULL,
-  email       VARCHAR(100) UNIQUE NOT NULL,
-  rola_id     INTEGER REFERENCES public.rola(rola_id)
+CREATE TABLE public.users (
+  user_id SERIAL PRIMARY KEY,
+  name    VARCHAR(100) NOT NULL,
+  email   VARCHAR(100) UNIQUE NOT NULL,
+  role_id INTEGER REFERENCES public.roles(role_id)
     ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 -- ===============================
---  RESERVATION TABLE
+--  RESERVATIONS TABLE
 -- ===============================
-CREATE TABLE public.rezervacia (
-  rezervacia_id       SERIAL PRIMARY KEY,
-  miestnost_id        INTEGER NOT NULL REFERENCES public.miestnost(miestnost_id)
+CREATE TABLE public.reservations (
+  reservation_id    SERIAL PRIMARY KEY,
+  room_id           INTEGER NOT NULL REFERENCES public.rooms(room_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
-  datum_vytvorenia    DATE    NOT NULL DEFAULT CURRENT_DATE,
-  datum_rezervacie    DATE    NOT NULL,
-  zaciatok_rezervacie TIME    NOT NULL DEFAULT '00:00',
-  dlzka_rezervacie    INTERVAL NOT NULL CHECK (dlzka_rezervacie > INTERVAL '0 minutes'),
-  uzivatel_id         INTEGER NOT NULL REFERENCES public.uzivatel(uzivatel_id)
+  created_date      DATE     NOT NULL DEFAULT CURRENT_DATE,
+  reservation_date  DATE     NOT NULL,
+  start_time        TIME     NOT NULL DEFAULT '00:00',
+  duration          INTERVAL NOT NULL CHECK (duration > INTERVAL '0 minutes'),
+  user_id           INTEGER NOT NULL REFERENCES public.users(user_id)
     ON UPDATE CASCADE ON DELETE RESTRICT
 );
 

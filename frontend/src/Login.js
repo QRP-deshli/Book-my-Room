@@ -2,18 +2,21 @@ import React from "react";
 
 export default function Login() {
   const handleLogin = () => {
-    // presmerovanie na backend – GitHub OAuth
+    // Redirect to backend – GitHub OAuth
     window.location.href = "http://localhost:5000/auth/github";
   };
 
   return (
-    <div style={{
-      textAlign: "center",
-      marginTop: "100px",
-      fontFamily: "Arial, sans-serif"
-    }}>
+    <div
+      style={{
+        textAlign: "center",
+        marginTop: "100px",
+        fontFamily: "Arial, sans-serif",
+      }}
+    >
       <h1>BookMyRoom</h1>
-      <h3>Prihlásenie cez GitHub</h3>
+      <h3>Sign in with GitHub</h3>
+
       <button
         onClick={handleLogin}
         style={{
@@ -23,10 +26,10 @@ export default function Login() {
           padding: "10px 20px",
           borderRadius: "6px",
           cursor: "pointer",
-          fontSize: "16px"
+          fontSize: "16px",
         }}
       >
-        Prihlásiť sa cez GitHub
+        Sign in with GitHub
       </button>
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
-import Miestnosti from "./Miestnosti";
+import Rooms from "./Rooms"; 
 import Login from "./Login";
 
 function App() {
@@ -29,14 +29,14 @@ function App() {
 
   const token = localStorage.getItem("token");
 
-  // 🔹 Pridať používateľa
+  // 🔹 Add user
   const addUser = async () => {
-    const meno = prompt("Zadaj meno nového používateľa:");
-    const email = prompt("Zadaj email:");
-    const rola = prompt("Zadaj rolu (viewer, employer, admin):");
+    const name = prompt("Enter the name of the new user:");
+    const email = prompt("Enter email:");
+    const role = prompt("Enter role (viewer, employer, admin):");
 
-    if (!meno || !email || !rola) {
-      alert("❌ Musíš vyplniť všetky polia.");
+    if (!name || !email || !role) {
+      alert("❌ You must fill out all fields.");
       return;
     }
 
@@ -47,30 +47,30 @@ function App() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ meno, email, rola }),
+        body: JSON.stringify({ name, email, role }),
       });
 
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ Používateľ '${meno}' bol pridaný.`);
+        alert(`✅ User '${name}' has been added.`);
       } else {
-        alert(`❌ ${data.error || "Chyba pri pridávaní používateľa"}`);
+        alert(`❌ ${data.error || "Error adding user"}`);
       }
     } catch (err) {
       console.error(err);
-      alert("❌ Serverová chyba.");
+      alert("❌ Server error.");
     }
   };
 
-  // 🔹 Pridať miestnosť
+  // 🔹 Add room
   const addRoom = async () => {
-    const cislo_miestnosti = prompt("Číslo miestnosti (napr. E101):");
-    const kapacita = prompt("Kapacita:");
-    const poschodie = prompt("Poschodie:");
-    const budova_id = prompt("ID budovy (napr. 1):");
+    const room_number = prompt("Room number (e.g., E101):");
+    const capacity = prompt("Capacity:");
+    const floor = prompt("Floor:");
+    const building_id = prompt("Building ID (e.g., 1):");
 
-    if (!cislo_miestnosti || !kapacita || !poschodie || !budova_id) {
-      alert("❌ Musíš vyplniť všetky polia.");
+    if (!room_number || !capacity || !floor || !building_id) {
+      alert("❌ You must fill out all fields.");
       return;
     }
 
@@ -82,63 +82,66 @@ function App() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          cislo_miestnosti,
-          kapacita: Number(kapacita),
-          poschodie: Number(poschodie),
-          budova_id: Number(budova_id),
+          room_number,
+          capacity: Number(capacity),
+          floor: Number(floor),
+          building_id: Number(building_id),
         }),
       });
 
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ Miestnosť '${cislo_miestnosti}' bola pridaná.`);
+        alert(`✅ Room '${room_number}' has been added.`);
       } else {
-        alert(`❌ ${data.error || "Chyba pri pridávaní miestnosti"}`);
+        alert(`❌ ${data.error || "Error adding room"}`);
       }
     } catch (err) {
       console.error(err);
-      alert("❌ Serverová chyba.");
+      alert("❌ Server error.");
     }
   };
-
 
   return (
     <div className="App">
       <h1>BookMyRoom</h1>
-<p>Role: <b>{role}</b></p>
+      <p>
+        Role: <b>{role}</b>
+      </p>
 
-{!localStorage.getItem("token") ? (
-  <button onClick={() => (window.location.href = "http://localhost:5000/auth/github")}>
-    Prihlásiť sa cez GitHub
-  </button>
-) : (
-  <button onClick={logout}>Odhlásiť</button>
-)}
-
+      {!localStorage.getItem("token") ? (
+        <button
+          onClick={() =>
+            (window.location.href = "http://localhost:5000/auth/github")
+          }
+        >
+          Sign in with GitHub
+        </button>
+      ) : (
+        <button onClick={logout}>Log out</button>
+      )}
 
       {role === "viewer" && (
         <>
-          <h3>Len prezeranie miestností</h3>
-          <Miestnosti />
+          <h3>Room Overview</h3>
+          <Rooms />
         </>
       )}
 
       {role === "employer" && (
-  <>
-    <h3>Rezervácie</h3>
-    <Miestnosti canBook canDelete />
-  </>
-)}
-
+        <>
+          <h3>Reservations</h3>
+          <Rooms canBook canDelete />
+        </>
+      )}
 
       {role === "admin" && (
         <>
-          <h3>Administrácia</h3>
-          <button onClick={addUser}>Pridať používateľa</button>
+          <h3>Administration</h3>
+          <button onClick={addUser}>Add user</button>
           <button onClick={addRoom} style={{ marginLeft: "0.5rem" }}>
-            Pridať miestnosť
+            Add room
           </button>
-          <Miestnosti canBook canDelete />
+          <Rooms canBook canDelete />
         </>
       )}
     </div>
