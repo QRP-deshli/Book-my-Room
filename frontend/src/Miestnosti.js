@@ -4,37 +4,49 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
   const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+
   const [selectedDate, setSelectedDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
   const [startTime, setStartTime] = useState("09:00");
+
   const [duration, setDuration] = useState("1 hour");
   const [search, setSearch] = useState("");
   const [suggestedSlot, setSuggestedSlot] = useState(null);
 
   const token = localStorage.getItem("token");
 
+  // ------------------------------------------------------------------------------------
+  // 🔥 Funkcia: MIN čas (blokuje čas v minulosti, ak je vybraný dnešný dátum)
+  // ------------------------------------------------------------------------------------
+  const getMinTime = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (selectedDate !== today) return "00:00";
+
+    const now = new Date();
+    const h = now.getHours().toString().padStart(2, "0");
+    const m = now.getMinutes().toString().padStart(2, "0");
+    return `${h}:${m}`;
+  };
+
+  // ------------------------------------------------------------------------------------
   // Fetch rooms
+  // ------------------------------------------------------------------------------------
   useEffect(() => {
     setLoading(true);
     fetch(
       `http://localhost:5000/api/rooms?date=${selectedDate}&time=${startTime}&search=${search}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+      { headers: { Authorization: `Bearer ${token}` } }
     )
       .then((res) => res.json())
       .then((data) => {
-  // ak backend vráti priamo pole
-  if (Array.isArray(data)) {
-    setRooms(data);
-  } else {
-    setRooms(data.rooms || []);
-    setSuggestedSlot(data.nextFreeSlot || null);
-  }
-})
+        if (Array.isArray(data)) {
+          setRooms(data);
+        } else {
+          setRooms(data.rooms || []);
+          setSuggestedSlot(data.nextFreeSlot || null);
+        }
+      })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
   }, [selectedDate, startTime, search, token]);
@@ -43,9 +55,12 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
     filter === "all" ? true : r.status === filter
   );
 
+  // ------------------------------------------------------------------------------------
   // Rezervácia
+  // ------------------------------------------------------------------------------------
   const handleBook = async (roomId, customTime = null) => {
     const bookingTime = customTime || startTime;
+
     const confirm = window.confirm(
       `Reserve room ${roomId} on ${selectedDate} at ${bookingTime} for ${duration}?`
     );
@@ -87,7 +102,9 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
     }
   };
 
+  // ------------------------------------------------------------------------------------
   // Zrušenie rezervácie
+  // ------------------------------------------------------------------------------------
   const handleCancel = async (room) => {
     if (!room.active_rezervacia_id) {
       alert("❌ No active reservation found for this room");
@@ -97,11 +114,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
     try {
       const resInfo = await fetch(
         `http://localhost:5000/api/reservation/${room.active_rezervacia_id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       const info = await resInfo.json();
 
@@ -114,20 +127,14 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
         `Cancel reservation for room ${info.cislo_miestnosti}\n` +
           `📅 Date: ${info.datum_rezervacie}\n` +
           `⏰ Start time: ${info.zaciatok_rezervacie}\n\n` +
-          `Are you sure you want to cancel it?`
+          `Are you sure?`
       );
       if (!confirm) return;
 
       const res = await fetch(
         `http://localhost:5000/api/cancel-reservation/${room.active_rezervacia_id}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
       );
-      const data = await res.json();
 
       if (res.ok) {
         alert("✅ Reservation canceled");
@@ -139,6 +146,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
           )
         );
       } else {
+        const data = await res.json();
         alert(`❌ ${data.error || "Cancelation failed"}`);
       }
     } catch (err) {
@@ -147,11 +155,23 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
     }
   };
 
+  // ------------------------------------------------------------------------------------
+  // BLOKOVANIE BOOK tlačidla → minulosť
+  // ------------------------------------------------------------------------------------
+  const nowDate = new Date().toISOString().slice(0, 10);
+  const isPastDate = selectedDate < nowDate;
+  const isPastTime =
+    selectedDate === nowDate && startTime < getMinTime();
+
+  const blockBooking = isPastDate || isPastTime;
+
+  // ------------------------------------------------------------------------------------
+
   return (
     <div style={{ padding: "1rem" }}>
       <h2>Room Reservations</h2>
 
-      {/* Search bar */}
+      {/* Search */}
       <div style={{ marginBottom: "1rem" }}>
         <label>
           🔍 Search room or address:
@@ -165,13 +185,14 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
         </label>
       </div>
 
-      {/* Date & Time selection */}
+      {/* Date & Time */}
       <div style={{ marginBottom: "1rem" }}>
         <label>
           📅 Date:
           <input
             type="date"
             value={selectedDate}
+            min={nowDate}           // 🔥 BLOK DÁTUMU
             onChange={(e) => setSelectedDate(e.target.value)}
             style={{ marginLeft: "0.5rem" }}
           />
@@ -182,6 +203,7 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
           <input
             type="time"
             value={startTime}
+            min={getMinTime()}     // 🔥 BLOK ČASU
             onChange={(e) => setStartTime(e.target.value)}
             style={{ marginLeft: "0.5rem" }}
           />
@@ -204,28 +226,27 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
         </label>
       </div>
 
-      {/* Filters */}
+      {/* Filter */}
       <div style={{ marginBottom: "1rem" }}>
         <button onClick={() => setFilter("all")}>All</button>
         <button onClick={() => setFilter("free")}>Free</button>
         <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
 
-      {/* Show next available slot for this room */}
-{suggestedSlot && (
-  <div style={{ marginBottom: "1rem", color: "green" }}>
-    Next available slot for this room: <b>{suggestedSlot}</b>{" "}
-    {canBook && (
-      <button
-        style={{ marginLeft: "0.5rem" }}
-        onClick={() => handleBook(rooms[0].miestnost_id, suggestedSlot)}
-      >
-        Reserve this slot
-      </button>
-    )}
-  </div>
-)}
-
+      {/* Suggested slot */}
+      {suggestedSlot && (
+        <div style={{ marginBottom: "1rem", color: "green" }}>
+          Next available slot: <b>{suggestedSlot}</b>
+          {canBook && !blockBooking && (
+            <button
+              style={{ marginLeft: "0.5rem" }}
+              onClick={() => handleBook(rooms[0].miestnost_id, suggestedSlot)}
+            >
+              Reserve this slot
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       {loading ? (
@@ -234,7 +255,6 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
         <table border="1" cellPadding="8" width="100%">
           <thead>
             <tr>
-              
               <th>Room</th>
               <th>Capacity</th>
               <th>Floor</th>
@@ -246,15 +266,20 @@ export default function Miestnosti({ canBook = false, canDelete = false }) {
             {filteredRooms.length > 0 ? (
               filteredRooms.map((r) => (
                 <tr key={r.miestnost_id}>
-                  
                   <td>{r.cislo_miestnosti}</td>
                   <td>{r.kapacita}</td>
                   <td>{r.poschodie}</td>
                   <td>{r.status === "free" ? "Free" : "Occupied"}</td>
+
                   <td>
-                    {r.status === "free" && canBook && (
-                      <button onClick={() => handleBook(r.miestnost_id)}>Book</button>
+                    {/* BOOK tlačidlo → blokované pre minulosť */}
+                    {r.status === "free" && canBook && !blockBooking && (
+                      <button onClick={() => handleBook(r.miestnost_id)}>
+                        Book
+                      </button>
                     )}
+
+                    {/* CANCEL */}
                     {r.status === "occupied" && canDelete && (
                       <button onClick={() => handleCancel(r)}>Cancel</button>
                     )}

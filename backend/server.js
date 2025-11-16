@@ -324,6 +324,27 @@ app.get("/api/room-schedule/:roomId", async (req, res) => {
 app.delete("/api/cancel-reservation/:id", verifyToken, requireRole("employer", "admin"), async (req, res) => {
   try {
     const { id } = req.params;
+
+    // 1️⃣ Zisti vlastníka rezervácie
+    const ownerRes = await pool.query(
+      `SELECT uzivatel_id FROM public.rezervacia WHERE rezervacia_id = $1`,
+      [id]
+    );
+
+    if (ownerRes.rows.length === 0) {
+      return res.status(404).json({ error: "Reservation not found" });
+    }
+
+    const ownerId = ownerRes.rows[0].uzivatel_id;
+
+    // 2️⃣ Employer môže zmazať len svoju vlastnú rezerváciu
+    if (req.user.role === "employer" && ownerId !== req.user.id) {
+      return res.status(403).json({ error: "You can only cancel your own reservations" });
+    }
+
+    // 3️⃣ Admin môže zmazať hocičo → pusti ďalej
+
+    // 4️⃣ Vymazanie rezervácie
     const result = await pool.query(
       `DELETE FROM public.rezervacia WHERE rezervacia_id = $1 RETURNING rezervacia_id`,
       [id]
@@ -339,6 +360,7 @@ app.delete("/api/cancel-reservation/:id", verifyToken, requireRole("employer", "
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 app.post("/api/admin/add-user", verifyToken, requireRole("admin"), async (req, res) => {
   try {

@@ -124,11 +124,12 @@ function App() {
       )}
 
       {role === "employer" && (
-        <>
-          <h3>Rezervácie</h3>
-          <Miestnosti canBook />
-        </>
-      )}
+  <>
+    <h3>Rezervácie</h3>
+    <Miestnosti canBook canDelete />
+  </>
+)}
+
 
       {role === "admin" && (
         <>
