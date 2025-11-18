@@ -25,11 +25,15 @@ function App() {
         localStorage.removeItem("token");
       }
     }
+    if (window.location.search.includes("token")) {
+    window.history.replaceState({}, document.title, "/");
+    }
   }, []);
 
   const logout = () => {
     localStorage.removeItem("token");
     setRole("viewer");
+    window.location.reload();
   };
 
   const token = localStorage.getItem("token");
