@@ -6,82 +6,136 @@ import session from "express-session";
 import passport from "passport";
 import { Strategy as GitHubStrategy } from "passport-github2";
 import jwt from "jsonwebtoken";
-console.log("🔥 server.js sa načítal");
+
+console.log("🔥 server.js loaded");
 
 dotenv.config();
 const { Pool } = pkg;
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-console.log("🌐 CORS enabled for all origins");
 
-// Session middleware (required for OAuth)
-app.use(session({
-  secret: process.env.SESSION_SECRET || "secret123",
-  resave: false,
-  saveUninitialized: false
-}));
+// ===============================
+// BASIC APP / CORS
+// ===============================
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
+
+// povolené originy (produkcia + lokál)
+const allowedOrigins = [FRONTEND_URL, "http://localhost:3000"].filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  })
+);
+
+app.use(express.json());
+console.log("🌐 CORS configured for:", allowedOrigins);
+
+// ===============================
+// SESSION (required for OAuth)
+// ===============================
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "secret123",
+    resave: false,
+    saveUninitialized: false,
+    // cookie nastavíme jednoducho – pre Render to stačí
+    cookie: {
+      sameSite: "lax",
+    },
+  })
+);
+
 app.use(passport.initialize());
 app.use(passport.session());
 
-// PostgreSQL connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Render vyžaduje SSL
-});
+// ===============================
+// DATABASE (Render + lokál)
+// ===============================
+let pool;
 
-pool.connect()
+if (process.env.DATABASE_URL) {
+  // Render / iný hosting – typicky dá DATABASE_URL
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }, // Render vyžaduje SSL
+  });
+  console.log("🛢 Using DATABASE_URL with SSL");
+} else {
+  // Lokálny vývoj cez PGHOST, PGUSER, ...
+  pool = new Pool({
+    host: process.env.PGHOST || "localhost",
+    user: process.env.PGUSER || "postgres",
+    password: process.env.PGPASSWORD || "",
+    database: process.env.PGDATABASE || "bookmyroom",
+    port: process.env.PGPORT || 5432,
+  });
+  console.log("🛢 Using local PG config");
+}
+
+pool
+  .connect()
   .then(() => console.log("✅ Connected to PostgreSQL"))
-  .catch(err => console.error("❌ Database connection failed:", err));
-
+  .catch((err) => console.error("❌ Database connection failed:", err));
 
 // ===============================
 // GITHUB OAUTH STRATEGY
 // ===============================
-passport.use(new GitHubStrategy({
-  clientID: process.env.GITHUB_CLIENT_ID,
-  clientSecret: process.env.GITHUB_CLIENT_SECRET,
-  callbackURL: process.env.BACKEND_URL + "/auth/github/callback"
-}, async (accessToken, refreshToken, profile, done) => {
-  try {
-    const email = profile.emails?.[0]?.value || `${profile.username}@github.local`;
-    const name = profile.displayName || profile.username;
+passport.use(
+  new GitHubStrategy(
+    {
+      clientID: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      callbackURL: `${BACKEND_URL}/auth/github/callback`, // produkcia + lokál podľa ENV
+    },
+    async (accessToken, refreshToken, profile, done) => {
+      try {
+        const email =
+          profile.emails?.[0]?.value || `${profile.username}@github.local`;
+        const name = profile.displayName || profile.username;
 
-    // check if user exists
-    const existing = await pool.query(
-      `SELECT u.*, r.nazov AS nazov_rola
-       FROM uzivatel u
-       JOIN rola r ON u.rola_id = r.rola_id
-       WHERE u.email = $1`, [email]
-    );
+        // Check if user exists
+        const existing = await pool.query(
+          `SELECT u.*, r.name AS role_name
+           FROM users u
+           JOIN roles r ON u.role_id = r.role_id
+           WHERE u.email = $1`,
+          [email]
+        );
 
-    let user;
-    if (existing.rows.length === 0) {
-      const roleRes = await pool.query("SELECT rola_id FROM rola WHERE nazov = 'viewer'");
-      const roleId = roleRes.rows[0].rola_id;
+        let user;
+        if (existing.rows.length === 0) {
+          const roleRes = await pool.query(
+            "SELECT role_id FROM roles WHERE name = 'viewer'"
+          );
+          const roleId = roleRes.rows[0].role_id;
 
-      await pool.query(
-        "INSERT INTO uzivatel (meno, email, rola_id) VALUES ($1, $2, $3)",
-        [name, email, roleId]
-      );
+          await pool.query(
+            "INSERT INTO users (name, email, role_id) VALUES ($1, $2, $3)",
+            [name, email, roleId]
+          );
 
-      const result = await pool.query(
-        `SELECT u.*, r.nazov AS nazov_rola
-         FROM uzivatel u
-         JOIN rola r ON u.rola_id = r.rola_id
-         WHERE u.email = $1`, [email]
-      );
-      user = result.rows[0];
-    } else {
-      user = existing.rows[0];
+          const result = await pool.query(
+            `SELECT u.*, r.name AS role_name
+             FROM users u
+             JOIN roles r ON u.role_id = r.role_id
+             WHERE u.email = $1`,
+            [email]
+          );
+          user = result.rows[0];
+        } else {
+          user = existing.rows[0];
+        }
+
+        done(null, user);
+      } catch (err) {
+        done(err, null);
+      }
     }
-
-    done(null, user);
-  } catch (err) {
-    done(err, null);
-  }
-}));
+  )
+);
 
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
@@ -89,19 +143,23 @@ passport.deserializeUser((user, done) => done(null, user));
 // ===============================
 // AUTH ROUTES
 // ===============================
-app.get("/auth/github",
+app.get(
+  "/auth/github",
   passport.authenticate("github", { scope: ["user:email"] })
 );
 
-app.get("/auth/github/callback",
+app.get(
+  "/auth/github/callback",
   passport.authenticate("github", { failureRedirect: "/" }),
   (req, res) => {
     const token = jwt.sign(
-      { id: req.user.uzivatel_id, role: req.user.nazov_rola },
+      { id: req.user.user_id, role: req.user.role_name },
       process.env.JWT_SECRET || "jwtsecret",
       { expiresIn: "1h" }
     );
-    res.redirect(`${process.env.FRONTEND_URL}/?token=${token}`);
+
+    // redirect na frontend (produkcia alebo lokál podľa ENV)
+    res.redirect(`${FRONTEND_URL}/?token=${token}`);
   }
 );
 
@@ -122,29 +180,32 @@ function verifyToken(req, res, next) {
   }
 }
 
-// Optional auth middleware — allows both guest and logged users
+// Optional auth middleware — allows guests and logged users
 function optionalAuth(req, res, next) {
   const authHeader = req.headers["authorization"];
   if (!authHeader) return next();
+
   const token = authHeader.split(" ")[1];
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET || "jwtsecret");
   } catch {
-    // ignore invalid tokens
+    // Ignore invalid tokens
   }
   next();
 }
 
-
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!req.user || !roles.includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
     next();
   };
 }
 
+// ===============================
+// GET ROOMS
+// ===============================
 app.get("/api/rooms", optionalAuth, async (req, res) => {
   try {
     const { date, time, search } = req.query;
@@ -154,57 +215,65 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
 
     const roomsQuery = `
       SELECT 
-        m.miestnost_id,
-        m.cislo_miestnosti,
-        m.kapacita,
-        m.poschodie,
-        b.adresa,
-        b.mesto,
-        r.rezervacia_id AS active_rezervacia_id,
+        r.room_id,
+        r.room_number,
+        r.capacity,
+        r.floor,
+        b.address,
+        b.city,
+        res.reservation_id AS active_reservation_id,
         CASE 
-          WHEN r.rezervacia_id IS NOT NULL THEN 'occupied'
+          WHEN res.reservation_id IS NOT NULL THEN 'occupied'
           ELSE 'free'
         END AS status
-      FROM public.miestnost m
-      JOIN public.budova b ON m.budova_id = b.budova_id
-      LEFT JOIN public.rezervacia r
-        ON r.miestnost_id = m.miestnost_id
-        AND r.datum_rezervacie = $1
-        AND $2::TIME >= r.zaciatok_rezervacie
-        AND $2::TIME < (r.zaciatok_rezervacie + r.dlzka_rezervacie)
-      WHERE LOWER(m.cislo_miestnosti) LIKE $3
-         OR LOWER(b.adresa) LIKE $3
-         OR LOWER(b.mesto) LIKE $3
+      FROM rooms r
+      JOIN buildings b ON r.building_id = b.building_id
+      LEFT JOIN reservations res
+        ON res.room_id = r.room_id
+        AND res.reservation_date = $1
+        AND $2::TIME >= res.start_time
+        AND $2::TIME < (res.start_time + res.duration)
+      WHERE LOWER(r.room_number) LIKE $3
+         OR LOWER(b.address) LIKE $3
+         OR LOWER(b.city) LIKE $3
          OR $3 = '%%'
-      ORDER BY m.miestnost_id;
+      ORDER BY r.room_id;
     `;
 
-    const result = await pool.query(roomsQuery, [selectedDate, selectedTime, searchText]);
+    const result = await pool.query(roomsQuery, [
+      selectedDate,
+      selectedTime,
+      searchText,
+    ]);
     const rooms = result.rows;
 
-    // ✅ Suggest next available slot if one specific room is searched and occupied
+    // Suggest next available slot
     let nextFreeSlot = null;
     if (search && rooms.length === 1 && rooms[0].status === "occupied") {
-      const roomId = rooms[0].miestnost_id;
+      const roomId = rooms[0].room_id;
 
       const nextSlotQuery = `
-  SELECT (r2.zaciatok_rezervacie + r2.dlzka_rezervacie) AS free_after
-  FROM public.rezervacia r2
-  WHERE r2.miestnost_id = $1
-    AND r2.datum_rezervacie = $2
-    AND r2.zaciatok_rezervacie >= $3::TIME
-    AND NOT EXISTS (
-      SELECT 1 FROM public.rezervacia r3
-      WHERE r3.miestnost_id = r2.miestnost_id
-        AND r3.datum_rezervacie = r2.datum_rezervacie
-        AND r3.zaciatok_rezervacie < (r2.zaciatok_rezervacie + r2.dlzka_rezervacie)
-        AND (r3.zaciatok_rezervacie + r3.dlzka_rezervacie) > (r2.zaciatok_rezervacie + r2.dlzka_rezervacie)
-    )
-  ORDER BY r2.zaciatok_rezervacie
-  LIMIT 1;
-`;
+        SELECT (r2.start_time + r2.duration) AS free_after
+        FROM reservations r2
+        WHERE r2.room_id = $1
+          AND r2.reservation_date = $2
+          AND r2.start_time >= $3::TIME
+          AND NOT EXISTS (
+            SELECT 1 FROM reservations r3
+            WHERE r3.room_id = r2.room_id
+              AND r3.reservation_date = r2.reservation_date
+              AND r3.start_time < (r2.start_time + r2.duration)
+              AND (r3.start_time + r3.duration) > (r2.start_time + r2.duration)
+          )
+        ORDER BY r2.start_time
+        LIMIT 1;
+      `;
 
-      const slotRes = await pool.query(nextSlotQuery, [roomId, selectedDate, selectedTime]);
+      const slotRes = await pool.query(nextSlotQuery, [
+        roomId,
+        selectedDate,
+        selectedTime,
+      ]);
       if (slotRes.rows.length > 0) nextFreeSlot = slotRes.rows[0].free_after;
     }
 
@@ -215,70 +284,78 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
   }
 });
 
+// ===============================
+// CREATE RESERVATION
+// ===============================
+app.post(
+  "/api/book-room",
+  verifyToken,
+  requireRole("employer", "admin"),
+  async (req, res) => {
+    try {
+      const { room_id, reservation_date, start_time, duration } = req.body;
 
-app.post("/api/book-room", verifyToken, requireRole("employer", "admin"), async (req, res) => {
-  try {
-    const {
-      miestnost_id,
-      datum_rezervacie,
-      zaciatok_rezervacie,
-      dlzka_rezervacie
-    } = req.body;
+      const userId = req.user.id;
 
-    const uzivatel_id = req.user.id;
-    if (!miestnost_id || !datum_rezervacie || !zaciatok_rezervacie || !dlzka_rezervacie) {
-      return res.status(400).json({ error: "Missing reservation data" });
-    }
+      if (!room_id || !reservation_date || !start_time || !duration) {
+        return res.status(400).json({ error: "Missing reservation data" });
+      }
 
-    const overlapCheck = await pool.query(
-      `
-      SELECT COUNT(*) AS cnt
-      FROM public.rezervacia
-      WHERE miestnost_id = $1
-        AND datum_rezervacie = $2
-        AND (
-          ($3::TIME >= zaciatok_rezervacie AND $3::TIME < (zaciatok_rezervacie + dlzka_rezervacie))
-          OR (zaciatok_rezervacie >= $3::TIME AND zaciatok_rezervacie < ($3::TIME + $4::INTERVAL))
+      // Check overlapping reservations
+      const overlapCheck = await pool.query(
+        `
+        SELECT COUNT(*) AS cnt
+        FROM reservations
+        WHERE room_id = $1
+          AND reservation_date = $2
+          AND (
+            ($3::TIME >= start_time AND $3::TIME < (start_time + duration))
+            OR (start_time >= $3::TIME AND start_time < ($3::TIME + $4::INTERVAL))
+          )
+        `,
+        [room_id, reservation_date, start_time, duration]
+      );
+
+      if (parseInt(overlapCheck.rows[0].cnt, 10) > 0) {
+        return res
+          .status(409)
+          .json({ error: "Room is already reserved at that time" });
+      }
+
+      const insert = await pool.query(
+        `
+        INSERT INTO reservations (
+          room_id, created_date, reservation_date,
+          start_time, duration, user_id
         )
-      `,
-      [miestnost_id, datum_rezervacie, zaciatok_rezervacie, dlzka_rezervacie]
-    );
+        VALUES ($1, CURRENT_DATE, $2, $3::TIME, $4::INTERVAL, $5)
+        RETURNING reservation_id
+        `,
+        [room_id, reservation_date, start_time, duration, userId]
+      );
 
-    if (parseInt(overlapCheck.rows[0].cnt) > 0) {
-      return res.status(409).json({ error: "Room is already reserved at that time" });
+      res.status(201).json({
+        message: `Reservation created for ${reservation_date} at ${start_time}`,
+        reservation_id: insert.rows[0].reservation_id,
+      });
+    } catch (err) {
+      console.error("Error creating reservation:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
-
-    const insert = await pool.query(
-      `
-      INSERT INTO public.rezervacia (
-        miestnost_id, datum_vytvorenia, datum_rezervacie,
-        zaciatok_rezervacie, dlzka_rezervacie, uzivatel_id
-      )
-      VALUES ($1, CURRENT_DATE, $2, $3::TIME, $4::INTERVAL, $5)
-      RETURNING rezervacia_id
-      `,
-      [miestnost_id, datum_rezervacie, zaciatok_rezervacie, dlzka_rezervacie, uzivatel_id]
-    );
-
-    res.status(201).json({
-      message: `Reservation created for ${datum_rezervacie} at ${zaciatok_rezervacie}`,
-      rezervacia_id: insert.rows[0].rezervacia_id
-    });
-  } catch (err) {
-    console.error("Error creating reservation:", err);
-    res.status(500).json({ error: "Internal server error" });
   }
-});
+);
 
-// GET reservation by ID
+// ===============================
+// GET RESERVATION BY ID
+// ===============================
 app.get("/api/reservation/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      `SELECT r.rezervacia_id, m.cislo_miestnosti, r.datum_rezervacie, r.zaciatok_rezervacie
-       FROM public.rezervacia r
-       JOIN public.miestnost m ON r.miestnost_id = m.miestnost_id
-       WHERE r.rezervacia_id = $1`,
+      `SELECT r.reservation_id, rm.room_number, r.reservation_date, r.start_time
+       FROM reservations r
+       JOIN rooms rm ON r.room_id = rm.room_id
+       WHERE r.reservation_id = $1`,
       [id]
     );
 
@@ -293,20 +370,24 @@ app.get("/api/reservation/:id", verifyToken, async (req, res) => {
   }
 });
 
-// Public: get today's schedule for a specific room
+// ===============================
+// GET TODAY'S ROOM SCHEDULE
+// ===============================
 app.get("/api/room-schedule/:roomId", async (req, res) => {
   try {
-    const id = parseInt(req.params.roomId);
-    if (isNaN(id)) return res.status(400).json({ error: "Invalid room ID" });
+    const id = parseInt(req.params.roomId, 10);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: "Invalid room ID" });
+    }
 
     const query = `
-      SELECT r.rezervacia_id, r.datum_rezervacie, r.zaciatok_rezervacie,
-             r.dlzka_rezervacie, u.meno AS user_name
-      FROM public.rezervacia r
-      JOIN public.uzivatel u ON r.uzivatel_id = u.uzivatel_id
-      WHERE r.miestnost_id = $1
-        AND r.datum_rezervacie = CURRENT_DATE
-      ORDER BY r.zaciatok_rezervacie;
+      SELECT r.reservation_id, r.reservation_date, r.start_time,
+             r.duration, u.name AS user_name
+      FROM reservations r
+      JOIN users u ON r.user_id = u.user_id
+      WHERE r.room_id = $1
+        AND r.reservation_date = CURRENT_DATE
+      ORDER BY r.start_time;
     `;
 
     const result = await pool.query(query, [id]);
@@ -317,64 +398,119 @@ app.get("/api/room-schedule/:roomId", async (req, res) => {
   }
 });
 
+// ===============================
+// CANCEL RESERVATION
+// ===============================
+app.delete(
+  "/api/cancel-reservation/:id",
+  verifyToken,
+  requireRole("employer", "admin"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
+      // Get reservation owner
+      const ownerRes = await pool.query(
+        `SELECT user_id FROM reservations WHERE reservation_id = $1`,
+        [id]
+      );
 
-app.delete("/api/cancel-reservation/:id", verifyToken, requireRole("employer", "admin"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query(
-      `DELETE FROM public.rezervacia WHERE rezervacia_id = $1 RETURNING rezervacia_id`,
-      [id]
-    );
+      if (ownerRes.rows.length === 0) {
+        return res.status(404).json({ error: "Reservation not found" });
+      }
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Reservation not found" });
+      const ownerId = ownerRes.rows[0].user_id;
+
+      // Employers can only remove their own reservations
+      if (req.user.role === "employer" && ownerId !== req.user.id) {
+        return res
+          .status(403)
+          .json({ error: "You can only cancel your own reservations" });
+      }
+
+      const result = await pool.query(
+        `DELETE FROM reservations WHERE reservation_id = $1 RETURNING reservation_id`,
+        [id]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: "Reservation not found" });
+      }
+
+      res.json({ message: "Reservation canceled successfully" });
+    } catch (err) {
+      console.error("Error canceling reservation:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
-
-    res.json({ message: "Reservation canceled successfully" });
-  } catch (err) {
-    console.error("Error canceling reservation:", err);
-    res.status(500).json({ error: "Internal server error" });
   }
-});
+);
 
-app.post("/api/admin/add-user", verifyToken, requireRole("admin"), async (req, res) => {
-  try {
-    const { meno, email, rola } = req.body;
-    const roleRes = await pool.query("SELECT rola_id FROM rola WHERE nazov = $1", [rola]);
-    if (roleRes.rows.length === 0) return res.status(400).json({ error: "Invalid role" });
+// ===============================
+// ADMIN: ADD USER
+// ===============================
+app.post(
+  "/api/admin/add-user",
+  verifyToken,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const { name, email, role } = req.body;
 
-    const insert = await pool.query(
-      "INSERT INTO uzivatel (meno, email, rola_id) VALUES ($1, $2, $3) RETURNING *",
-      [meno, email, roleRes.rows[0].rola_id]
-    );
+      const roleRes = await pool.query(
+        "SELECT role_id FROM roles WHERE name = $1",
+        [role]
+      );
 
-    res.status(201).json(insert.rows[0]);
-  } catch (err) {
-    console.error("Error adding user:", err);
-    res.status(500).json({ error: "Internal server error" });
+      if (roleRes.rows.length === 0) {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+
+      const insert = await pool.query(
+        "INSERT INTO users (name, email, role_id) VALUES ($1, $2, $3) RETURNING *",
+        [name, email, roleRes.rows[0].role_id]
+      );
+
+      res.status(201).json(insert.rows[0]);
+    } catch (err) {
+      console.error("Error adding user:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
   }
-});
+);
 
-app.post("/api/admin/add-room", verifyToken, requireRole("admin"), async (req, res) => {
-  try {
-    const { cislo_miestnosti, kapacita, poschodie, budova_id } = req.body;
-    const insert = await pool.query(
-      `
-      INSERT INTO public.miestnost (cislo_miestnosti, kapacita, poschodie, budova_id)
-      VALUES ($1, $2, $3, $4) RETURNING *
-      `,
-      [cislo_miestnosti, kapacita, poschodie, budova_id]
-    );
-    res.status(201).json(insert.rows[0]);
-  } catch (err) {
-    console.error("Error adding room:", err);
-    res.status(500).json({ error: "Internal server error" });
+// ===============================
+// ADMIN: ADD ROOM
+// ===============================
+app.post(
+  "/api/admin/add-room",
+  verifyToken,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const { room_number, capacity, floor, building_id } = req.body;
+
+      const insert = await pool.query(
+        `
+        INSERT INTO rooms (room_number, capacity, floor, building_id)
+        VALUES ($1, $2, $3, $4) RETURNING *
+        `,
+        [room_number, capacity, floor, building_id]
+      );
+
+      res.status(201).json(insert.rows[0]);
+    } catch (err) {
+      console.error("Error adding room:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
   }
-});
+);
 
 // ===============================
 // START SERVER
 // ===============================
 const port = process.env.PORT || 5000;
-app.listen(port, () => console.log(`🚀 Server running at http://localhost:${port}`));
+app.listen(port, () => {
+  console.log(`🚀 Server listening on port ${port}`);
+  console.log(`   BACKEND_URL: ${BACKEND_URL}`);
+  console.log(`   FRONTEND_URL: ${FRONTEND_URL}`);
+});
