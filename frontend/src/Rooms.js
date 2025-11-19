@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 
 export default function Rooms({ canBook = false, canDelete = false }) {
+  const API_URL =
+    process.env.REACT_APP_API_URL ||
+    "https://book-my-room-pn00.onrender.com";
+
   const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -15,15 +19,15 @@ export default function Rooms({ canBook = false, canDelete = false }) {
 
   const token = localStorage.getItem("token");
 
-  // 🔥 Minimum allowed time (prevents booking past times)
+  // 🔥 Minimum allowed time
   const getMinTime = () => {
     const today = new Date().toISOString().slice(0, 10);
     if (selectedDate !== today) return "00:00";
 
     const now = new Date();
-    const h = now.getHours().toString().padStart(2, "0");
-    const m = now.getMinutes().toString().padStart(2, "0");
-    return `${h}:${m}`;
+    return `${String(now.getHours()).padStart(2, "0")}:${String(
+      now.getMinutes()
+    ).padStart(2, "0")}`;
   };
 
   // Fetch rooms
@@ -31,7 +35,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     setLoading(true);
 
     fetch(
-      `http://localhost:5000/api/rooms?date=${selectedDate}&time=${startTime}&search=${search}`,
+      `${API_URL}/api/rooms?date=${selectedDate}&time=${startTime}&search=${search}`,
       { headers: { Authorization: `Bearer ${token}` } }
     )
       .then((res) => res.json())
@@ -45,7 +49,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
       })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
-  }, [selectedDate, startTime, search, token]);
+  }, [selectedDate, startTime, search, token, API_URL]);
 
   const filteredRooms = rooms.filter((r) =>
     filter === "all" ? true : r.status === filter
@@ -55,20 +59,22 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   const handleBook = async (roomId, customTime = null) => {
     const bookingTime = customTime || startTime;
 
-    const confirm = window.confirm(
-      `Reserve room ${roomId} on ${selectedDate} at ${bookingTime} for ${duration}?`
-    );
-    if (!confirm) return;
+    if (
+      !window.confirm(
+        `Reserve room ${roomId} on ${selectedDate} at ${bookingTime} for ${duration}?`
+      )
+    )
+      return;
 
     const body = {
       room_id: roomId,
       reservation_date: selectedDate,
       start_time: bookingTime,
-      duration: duration,
+      duration,
     };
 
     try {
-      const res = await fetch("http://localhost:5000/api/book-room", {
+      const res = await fetch(`${API_URL}/api/book-room`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -103,13 +109,13 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   // CANCEL RESERVATION
   const handleCancel = async (room) => {
     if (!room.active_reservation_id) {
-      alert("❌ No active reservation found for this room");
+      alert("❌ No active reservation found");
       return;
     }
 
     try {
       const resInfo = await fetch(
-        `http://localhost:5000/api/reservation/${room.active_reservation_id}`,
+        `${API_URL}/api/reservation/${room.active_reservation_id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -119,16 +125,17 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         return;
       }
 
-      const confirm = window.confirm(
-        `Cancel reservation for room ${info.room_number}\n` +
-          `📅 Date: ${info.reservation_date}\n` +
-          `⏰ Start time: ${info.start_time}\n\n` +
-          `Are you sure?`
-      );
-      if (!confirm) return;
+      if (
+        !window.confirm(
+          `Cancel reservation for room ${info.room_number}\n` +
+            `📅 Date: ${info.reservation_date}\n` +
+            `⏰ Time: ${info.start_time}`
+        )
+      )
+        return;
 
       const res = await fetch(
-        `http://localhost:5000/api/cancel-reservation/${room.active_reservation_id}`,
+        `${API_URL}/api/cancel-reservation/${room.active_reservation_id}`,
         { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -151,13 +158,11 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     }
   };
 
-  // Disable booking for past times/dates
-  const nowDate = new Date().toISOString().slice(0, 10);
-  const isPastDate = selectedDate < nowDate;
-  const isPastTime =
-    selectedDate === nowDate && startTime < getMinTime();
-
-  const blockBooking = isPastDate || isPastTime;
+  // past-time lock
+  const today = new Date().toISOString().slice(0, 10);
+  const blockPastDate = selectedDate < today;
+  const blockPastTime = selectedDate === today && startTime < getMinTime();
+  const blockBooking = blockPastDate || blockPastTime;
 
   return (
     <div style={{ padding: "1rem" }}>
@@ -166,10 +171,10 @@ export default function Rooms({ canBook = false, canDelete = false }) {
       {/* Search */}
       <div style={{ marginBottom: "1rem" }}>
         <label>
-          🔍 Search room or address:
+          🔍 Search:
           <input
             type="text"
-            placeholder="e.g., A101 or Main Street"
+            placeholder="e.g., A101"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ marginLeft: "0.5rem" }}
@@ -184,14 +189,14 @@ export default function Rooms({ canBook = false, canDelete = false }) {
           <input
             type="date"
             value={selectedDate}
-            min={nowDate}
+            min={today}
             onChange={(e) => setSelectedDate(e.target.value)}
             style={{ marginLeft: "0.5rem" }}
           />
         </label>
 
         <label style={{ marginLeft: "1rem" }}>
-          ⏰ Start time:
+          ⏰ Time:
           <input
             type="time"
             value={startTime}
@@ -225,7 +230,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
 
-      {/* Suggested next slot */}
+      {/* Next free slot */}
       {suggestedSlot && (
         <div style={{ marginBottom: "1rem", color: "green" }}>
           Next available slot: <b>{suggestedSlot}</b>
@@ -263,7 +268,6 @@ export default function Rooms({ canBook = false, canDelete = false }) {
                   <td>{r.capacity}</td>
                   <td>{r.floor}</td>
                   <td>{r.status === "free" ? "Free" : "Occupied"}</td>
-
                   <td>
                     {r.status === "free" && canBook && !blockBooking && (
                       <button onClick={() => handleBook(r.room_id)}>
@@ -279,7 +283,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
               ))
             ) : (
               <tr>
-                <td colSpan="6">No rooms found.</td>
+                <td colSpan="5">No rooms found.</td>
               </tr>
             )}
           </tbody>

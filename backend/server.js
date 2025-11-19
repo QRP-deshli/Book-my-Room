@@ -13,29 +13,67 @@ dotenv.config();
 const { Pool } = pkg;
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-console.log("🌐 CORS enabled for all origins");
 
-// Session middleware (required for OAuth)
+// ===============================
+// BASIC APP / CORS
+// ===============================
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
+
+// povolené originy (produkcia + lokál)
+const allowedOrigins = [FRONTEND_URL, "http://localhost:3000"].filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  })
+);
+
+app.use(express.json());
+console.log("🌐 CORS configured for:", allowedOrigins);
+
+// ===============================
+// SESSION (required for OAuth)
+// ===============================
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "secret123",
     resave: false,
     saveUninitialized: false,
+    // cookie nastavíme jednoducho – pre Render to stačí
+    cookie: {
+      sameSite: "lax",
+    },
   })
 );
+
 app.use(passport.initialize());
 app.use(passport.session());
 
-// PostgreSQL connection
-const pool = new Pool({
-  host: process.env.PGHOST,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-  database: process.env.PGDATABASE,
-  port: process.env.PGPORT,
-});
+// ===============================
+// DATABASE (Render + lokál)
+// ===============================
+let pool;
+
+if (process.env.DATABASE_URL) {
+  // Render / iný hosting – typicky dá DATABASE_URL
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }, // Render vyžaduje SSL
+  });
+  console.log("🛢 Using DATABASE_URL with SSL");
+} else {
+  // Lokálny vývoj cez PGHOST, PGUSER, ...
+  pool = new Pool({
+    host: process.env.PGHOST || "localhost",
+    user: process.env.PGUSER || "postgres",
+    password: process.env.PGPASSWORD || "",
+    database: process.env.PGDATABASE || "bookmyroom",
+    port: process.env.PGPORT || 5432,
+  });
+  console.log("🛢 Using local PG config");
+}
 
 pool
   .connect()
@@ -50,7 +88,7 @@ passport.use(
     {
       clientID: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      callbackURL: "http://localhost:5000/auth/github/callback",
+      callbackURL: `${BACKEND_URL}/auth/github/callback`, // produkcia + lokál podľa ENV
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
@@ -119,7 +157,9 @@ app.get(
       process.env.JWT_SECRET || "jwtsecret",
       { expiresIn: "1h" }
     );
-    res.redirect(`http://localhost:3000?token=${token}`);
+
+    // redirect na frontend (produkcia alebo lokál podľa ENV)
+    res.redirect(`${FRONTEND_URL}/?token=${token}`);
   }
 );
 
@@ -140,7 +180,7 @@ function verifyToken(req, res, next) {
   }
 }
 
-// Optional auth middleware — allows both guests and logged users
+// Optional auth middleware — allows guests and logged users
 function optionalAuth(req, res, next) {
   const authHeader = req.headers["authorization"];
   if (!authHeader) return next();
@@ -156,7 +196,7 @@ function optionalAuth(req, res, next) {
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!req.user || !roles.includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
     next();
@@ -253,12 +293,7 @@ app.post(
   requireRole("employer", "admin"),
   async (req, res) => {
     try {
-      const {
-        room_id,
-        reservation_date,
-        start_time,
-        duration
-      } = req.body;
+      const { room_id, reservation_date, start_time, duration } = req.body;
 
       const userId = req.user.id;
 
@@ -281,7 +316,7 @@ app.post(
         [room_id, reservation_date, start_time, duration]
       );
 
-      if (parseInt(overlapCheck.rows[0].cnt) > 0) {
+      if (parseInt(overlapCheck.rows[0].cnt, 10) > 0) {
         return res
           .status(409)
           .json({ error: "Room is already reserved at that time" });
@@ -296,13 +331,7 @@ app.post(
         VALUES ($1, CURRENT_DATE, $2, $3::TIME, $4::INTERVAL, $5)
         RETURNING reservation_id
         `,
-        [
-          room_id,
-          reservation_date,
-          start_time,
-          duration,
-          userId
-        ]
+        [room_id, reservation_date, start_time, duration, userId]
       );
 
       res.status(201).json({
@@ -346,7 +375,7 @@ app.get("/api/reservation/:id", verifyToken, async (req, res) => {
 // ===============================
 app.get("/api/room-schedule/:roomId", async (req, res) => {
   try {
-    const id = parseInt(req.params.roomId);
+    const id = parseInt(req.params.roomId, 10);
     if (isNaN(id)) {
       return res.status(400).json({ error: "Invalid room ID" });
     }
@@ -480,6 +509,8 @@ app.post(
 // START SERVER
 // ===============================
 const port = process.env.PORT || 5000;
-app.listen(port, () =>
-  console.log(`🚀 Server running at http://localhost:${port}`)
-);
+app.listen(port, () => {
+  console.log(`🚀 Server listening on port ${port}`);
+  console.log(`   BACKEND_URL: ${BACKEND_URL}`);
+  console.log(`   FRONTEND_URL: ${FRONTEND_URL}`);
+});

@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
 import Rooms from "./Rooms"; 
-import Login from "./Login";
+//import Login from "./Login";
 
 function App() {
+  const API_URL =
+    process.env.REACT_APP_API_URL ||
+    "https://book-my-room-pn00.onrender.com";
+
   const [role, setRole] = useState("viewer");
 
   useEffect(() => {
@@ -12,6 +16,7 @@ function App() {
 
     if (token) {
       localStorage.setItem("token", token);
+
       try {
         const payload = JSON.parse(atob(token.split(".")[1]));
         setRole(payload.role);
@@ -20,28 +25,34 @@ function App() {
         localStorage.removeItem("token");
       }
     }
+    if (window.location.search.includes("token")) {
+    window.history.replaceState({}, document.title, "/");
+    }
   }, []);
 
   const logout = () => {
     localStorage.removeItem("token");
     setRole("viewer");
+    window.location.reload();
   };
 
   const token = localStorage.getItem("token");
 
-  // 🔹 Add user
+  // ==========================
+  // ADMIN: ADD USER
+  // ==========================
   const addUser = async () => {
-    const name = prompt("Enter the name of the new user:");
+    const name = prompt("Enter user name:");
     const email = prompt("Enter email:");
-    const role = prompt("Enter role (viewer, employer, admin):");
+    const role = prompt("Role: viewer, employer, admin");
 
     if (!name || !email || !role) {
-      alert("❌ You must fill out all fields.");
+      alert("❌ All fields are required");
       return;
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/admin/add-user", {
+      const res = await fetch(`${API_URL}/api/admin/add-user`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -52,30 +63,32 @@ function App() {
 
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ User '${name}' has been added.`);
+        alert(`✅ User '${name}' added.`);
       } else {
-        alert(`❌ ${data.error || "Error adding user"}`);
+        alert(`❌ ${data.error || "Failed to add user"}`);
       }
     } catch (err) {
       console.error(err);
-      alert("❌ Server error.");
+      alert("❌ Server error");
     }
   };
 
-  // 🔹 Add room
+  // ==========================
+  // ADMIN: ADD ROOM
+  // ==========================
   const addRoom = async () => {
-    const room_number = prompt("Room number (e.g., E101):");
+    const room_number = prompt("Room number:");
     const capacity = prompt("Capacity:");
     const floor = prompt("Floor:");
-    const building_id = prompt("Building ID (e.g., 1):");
+    const building_id = prompt("Building ID:");
 
     if (!room_number || !capacity || !floor || !building_id) {
-      alert("❌ You must fill out all fields.");
+      alert("❌ All fields are required");
       return;
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/admin/add-room", {
+      const res = await fetch(`${API_URL}/api/admin/add-room`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -91,13 +104,13 @@ function App() {
 
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ Room '${room_number}' has been added.`);
+        alert(`✅ Room '${room_number}' added.`);
       } else {
-        alert(`❌ ${data.error || "Error adding room"}`);
+        alert(`❌ ${data.error || "Failed to add room"}`);
       }
     } catch (err) {
       console.error(err);
-      alert("❌ Server error.");
+      alert("❌ Server error");
     }
   };
 
@@ -108,10 +121,10 @@ function App() {
         Role: <b>{role}</b>
       </p>
 
-      {!localStorage.getItem("token") ? (
+      {!token ? (
         <button
           onClick={() =>
-            (window.location.href = "http://localhost:5000/auth/github")
+            (window.location.href = `${API_URL}/auth/github`)
           }
         >
           Sign in with GitHub
@@ -119,6 +132,10 @@ function App() {
       ) : (
         <button onClick={logout}>Log out</button>
       )}
+
+      {/* ========================== */}
+      {/*          ROLE UI          */}
+      {/* ========================== */}
 
       {role === "viewer" && (
         <>
