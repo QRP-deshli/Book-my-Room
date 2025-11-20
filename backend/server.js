@@ -204,7 +204,7 @@ function requireRole(...roles) {
 }
 
 // ===============================
-// GET ROOMS
+// GET ROOMS + ALL DAILY RESERVATIONS
 // ===============================
 app.get("/api/rooms", optionalAuth, async (req, res) => {
   try {
@@ -213,6 +213,7 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
     const selectedTime = time || "00:00";
     const searchText = search ? `%${search.toLowerCase()}%` : "%%";
 
+    // Hlavný query — najbližšia / aktívna rezervácia
     const roomsQuery = `
       SELECT 
         r.room_id,
@@ -222,17 +223,26 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
         b.address,
         b.city,
         res.reservation_id AS active_reservation_id,
+        res.start_time AS next_reservation_start,
+        res.duration AS next_reservation_duration,
         CASE 
           WHEN res.reservation_id IS NOT NULL THEN 'occupied'
           ELSE 'free'
         END AS status
       FROM rooms r
       JOIN buildings b ON r.building_id = b.building_id
-      LEFT JOIN reservations res
-        ON res.room_id = r.room_id
-        AND res.reservation_date = $1
-        AND $2::TIME >= res.start_time
-        AND $2::TIME < (res.start_time + res.duration)
+      LEFT JOIN LATERAL (
+        SELECT reservation_id, start_time, duration
+        FROM reservations
+        WHERE room_id = r.room_id
+          AND reservation_date = $1
+          AND (
+            ($2::TIME >= start_time AND $2::TIME < (start_time + duration))
+            OR start_time >= $2::TIME
+          )
+        ORDER BY start_time
+        LIMIT 1
+      ) res ON true
       WHERE LOWER(r.room_number) LIKE $3
          OR LOWER(b.address) LIKE $3
          OR LOWER(b.city) LIKE $3
@@ -245,9 +255,64 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
       selectedTime,
       searchText,
     ]);
+
     const rooms = result.rows;
 
-    // Suggest next available slot
+    // Load all reservations for this date for each room
+    const reservationsQuery = `
+  SELECT 
+    reservation_id,
+    room_id,
+    start_time,
+    (start_time + duration) AS end_time,
+    duration,
+    user_id
+  FROM reservations
+  WHERE reservation_date = $1
+  ORDER BY start_time;
+`;
+
+    const allRes = await pool.query(reservationsQuery, [selectedDate]);
+
+    // Attach reservations to each room
+    rooms.forEach(room => {
+      room.reservations = allRes.rows.filter(r => r.room_id === room.room_id);
+    });
+
+
+    // ======================================
+    // ✨ PRIDANÉ: všetky rezervácie daného dňa
+    // ======================================
+    const all = await pool.query(
+      `
+      SELECT 
+        r.room_id,
+        r.reservation_id,
+        r.start_time,
+        (r.start_time + r.duration) AS end_time,
+        r.duration,
+        u.name AS user_name
+      FROM reservations r
+      JOIN users u ON r.user_id = u.user_id
+      WHERE r.reservation_date = $1
+      ORDER BY r.start_time
+      `,
+      [selectedDate]
+    );
+
+    const dailyReservations = all.rows;
+
+    // pripojíme ku každému room len jeho rezervácie
+    const roomsWithReservations = rooms.map((room) => ({
+      ...room,
+      all_reservations: dailyReservations.filter(
+        (r) => r.room_id === room.room_id
+      ),
+    }));
+
+    // ==============================
+    // next free slot (pôvodný kód)
+    // ==============================
     let nextFreeSlot = null;
     if (search && rooms.length === 1 && rooms[0].status === "occupied") {
       const roomId = rooms[0].room_id;
@@ -277,12 +342,16 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
       if (slotRes.rows.length > 0) nextFreeSlot = slotRes.rows[0].free_after;
     }
 
-    res.json({ rooms, nextFreeSlot });
+    res.json({
+      rooms: roomsWithReservations,
+      nextFreeSlot,
+    });
   } catch (err) {
     console.error("Error fetching rooms:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 // ===============================
 // CREATE RESERVATION
@@ -394,6 +463,40 @@ app.get("/api/room-schedule/:roomId", async (req, res) => {
     res.json({ reservations: result.rows });
   } catch (err) {
     console.error("Error fetching room day plan:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ===============================
+// GET ROOM SCHEDULE (s dátumom)
+// ===============================
+app.get("/api/schedule", async (req, res) => {
+  try {
+    const { room_id, date } = req.query;
+
+    if (!room_id || !date) {
+      return res.status(400).json({ error: "Missing room_id or date" });
+    }
+
+    const query = `
+      SELECT 
+        r.reservation_id, 
+        r.reservation_date, 
+        r.start_time,
+        (r.start_time + r.duration) AS end_time,
+        r.duration, 
+        u.name AS user_name
+      FROM reservations r
+      JOIN users u ON r.user_id = u.user_id
+      WHERE r.room_id = $1
+        AND r.reservation_date = $2
+      ORDER BY r.start_time;
+    `;
+
+    const result = await pool.query(query, [room_id, date]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching schedule:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

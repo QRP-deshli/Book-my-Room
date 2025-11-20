@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function Rooms({ canBook = false, canDelete = false }) {
-  const API_URL =
-    process.env.REACT_APP_API_URL ||
-    "https://book-my-room-pn00.onrender.com";
+  const API_URL = "http://localhost:5000";
 
   const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState("all");
@@ -18,8 +17,10 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   const [suggestedSlot, setSuggestedSlot] = useState(null);
 
   const token = localStorage.getItem("token");
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // 🔥 Minimum allowed time
+  // MIN TIME
   const getMinTime = () => {
     const today = new Date().toISOString().slice(0, 10);
     if (selectedDate !== today) return "00:00";
@@ -30,7 +31,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     ).padStart(2, "0")}`;
   };
 
-  // Fetch rooms
+  // FETCH ROOMS - PRIDANÝ location.key do dependencies
   useEffect(() => {
     setLoading(true);
 
@@ -40,35 +41,36 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     )
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data)) {
-          setRooms(data);
-        } else {
-          setRooms(data.rooms || []);
-          setSuggestedSlot(data.nextFreeSlot || null);
-        }
+        let processed = data.rooms.map(r => ({
+          ...r,
+          allReservations: r.all_reservations || []
+        }));
+
+        setRooms(processed);
+        setSuggestedSlot(data.nextFreeSlot || null);
       })
+
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
-  }, [selectedDate, startTime, search, token, API_URL]);
+  }, [selectedDate, startTime, search, token, location.key]); // 🔥 location.key spôsobí refresh
 
   const filteredRooms = rooms.filter((r) =>
     filter === "all" ? true : r.status === filter
   );
 
-  // BOOK ROOM
-  const handleBook = async (roomId, customTime = null) => {
+  // BOOK
+  const handleBook = async (roomId, customTime = null, customDate = null) => {
     const bookingTime = customTime || startTime;
+    const bookingDate = customDate || selectedDate;
 
-    if (
-      !window.confirm(
-        `Reserve room ${roomId} on ${selectedDate} at ${bookingTime} for ${duration}?`
-      )
-    )
-      return;
+    const confirm = window.confirm(
+      `Reserve room ${roomId} on ${bookingDate} at ${bookingTime} for ${duration}?`
+    );
+    if (!confirm) return;
 
     const body = {
       room_id: roomId,
-      reservation_date: selectedDate,
+      reservation_date: bookingDate,
       start_time: bookingTime,
       duration,
     };
@@ -85,20 +87,20 @@ export default function Rooms({ canBook = false, canDelete = false }) {
 
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ Reservation confirmed at ${bookingTime}`);
+        alert(`Reservation confirmed at ${bookingTime}`);
         setRooms((prev) =>
           prev.map((r) =>
             r.room_id === roomId
               ? {
-                  ...r,
-                  status: "occupied",
-                  active_reservation_id: data.reservation_id,
-                }
+                ...r,
+                status: "occupied",
+                active_reservation_id: data.reservation_id,
+              }
               : r
           )
         );
       } else {
-        alert(`❌ ${data.error || "Reservation failed"}`);
+        alert(`${data.error || "Reservation failed"}`);
       }
     } catch (err) {
       console.error(err);
@@ -106,10 +108,10 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     }
   };
 
-  // CANCEL RESERVATION
-  const handleCancel = async (room) => {
+  // CANCEL
+  /*const handleCancel = async (room) => {
     if (!room.active_reservation_id) {
-      alert("❌ No active reservation found");
+      alert("No active reservation found");
       return;
     }
 
@@ -121,18 +123,14 @@ export default function Rooms({ canBook = false, canDelete = false }) {
 
       const info = await resInfo.json();
       if (!resInfo.ok) {
-        alert(`❌ ${info.error || "Reservation not found"}`);
+        alert(`${info.error || "Reservation not found"}`);
         return;
       }
 
-      if (
-        !window.confirm(
-          `Cancel reservation for room ${info.room_number}\n` +
-            `📅 Date: ${info.reservation_date}\n` +
-            `⏰ Time: ${info.start_time}`
-        )
-      )
-        return;
+      const confirm = window.confirm(
+        `Cancel reservation for room ${info.room_number}\nDate: ${info.reservation_date}\nStart: ${info.start_time}`
+      );
+      if (!confirm) return;
 
       const res = await fetch(
         `${API_URL}/api/cancel-reservation/${room.active_reservation_id}`,
@@ -140,7 +138,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
       );
 
       if (res.ok) {
-        alert("✅ Reservation canceled");
+        alert("Reservation canceled");
         setRooms((prev) =>
           prev.map((r) =>
             r.room_id === room.room_id
@@ -150,18 +148,96 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         );
       } else {
         const data = await res.json();
-        alert(`❌ ${data.error || "Cancelation failed"}`);
+        alert(`${data.error || "Cancellation failed"}`);
       }
     } catch (err) {
       console.error(err);
       alert("Server connection error");
     }
-  };
+  };*/
 
-  // past-time lock
+  // CANCEL
+  const handleCancel = async (room) => {
+  const all = room.all_reservations || [];
+
+  if (all.length === 0) {
+    alert("This room has no reservations for selected day.");
+    return;
+  }
+
+  // Výpis rezervácií
+  let msg = "Which reservation do you want to cancel?\n\n";
+  all.forEach((r, i) => {
+    msg += `${i + 1}) ${r.start_time} - ${r.end_time}\n`;
+  });
+  msg += "\nEnter number:";
+
+  const input = prompt(msg);
+  if (!input) return;
+
+  const index = parseInt(input) - 1;
+  if (isNaN(index) || index < 0 || index >= all.length) {
+    alert("Invalid selection.");
+    return;
+  }
+
+  const chosen = all[index];
+
+  // Potvrdenie
+  const ok = window.confirm(
+    `Cancel reservation?\n\nRoom: ${room.room_number}\nTime: ${chosen.start_time} - ${chosen.end_time}`
+  );
+  if (!ok) return;
+
+  try {
+    const res = await fetch(
+      `${API_URL}/api/cancel-reservation/${chosen.reservation_id}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || "Cancellation failed");
+      return;
+    }
+
+    alert("Reservation canceled");
+
+    // Lokálny update tabuľky
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.room_id === room.room_id
+          ? {
+              ...r,
+              status: r.all_reservations.length - 1 > 0 ? "occupied" : "free",
+              active_reservation_id:
+                r.all_reservations.length - 1 > 0
+                  ? r.all_reservations[0].reservation_id
+                  : null,
+              all_reservations: r.all_reservations.filter(
+                (x) => x.reservation_id !== chosen.reservation_id
+              ),
+            }
+          : r
+      )
+    );
+  } catch (err) {
+    console.error(err);
+    alert("Server error.");
+  }
+};
+
+
   const today = new Date().toISOString().slice(0, 10);
   const blockPastDate = selectedDate < today;
-  const blockPastTime = selectedDate === today && startTime < getMinTime();
+  const blockPastTime =
+    selectedDate === today && startTime < getMinTime();
   const blockBooking = blockPastDate || blockPastTime;
 
   return (
@@ -169,12 +245,11 @@ export default function Rooms({ canBook = false, canDelete = false }) {
       <h2>Room Reservations</h2>
 
       {/* Search */}
-      <div style={{ marginBottom: "1rem" }}>
+      <div>
         <label>
-          🔍 Search:
+          Search:
           <input
             type="text"
-            placeholder="e.g., A101"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ marginLeft: "0.5rem" }}
@@ -183,9 +258,9 @@ export default function Rooms({ canBook = false, canDelete = false }) {
       </div>
 
       {/* Date & Time */}
-      <div style={{ marginBottom: "1rem" }}>
+      <div style={{ margin: "1rem 0" }}>
         <label>
-          📅 Date:
+          Date:
           <input
             type="date"
             value={selectedDate}
@@ -196,7 +271,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         </label>
 
         <label style={{ marginLeft: "1rem" }}>
-          ⏰ Time:
+          Time:
           <input
             type="time"
             value={startTime}
@@ -207,7 +282,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         </label>
 
         <label style={{ marginLeft: "1rem" }}>
-          ⏳ Duration:
+          Duration:
           <select
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
@@ -230,22 +305,14 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
 
-      {/* Next free slot */}
+      {/* Suggested slot */}
       {suggestedSlot && (
-        <div style={{ marginBottom: "1rem", color: "green" }}>
-          Next available slot: <b>{suggestedSlot}</b>
-          {canBook && !blockBooking && (
-            <button
-              style={{ marginLeft: "0.5rem" }}
-              onClick={() => handleBook(rooms[0].room_id, suggestedSlot)}
-            >
-              Reserve this slot
-            </button>
-          )}
+        <div style={{ color: "green" }}>
+          Next free slot: <b>{suggestedSlot}</b>
         </div>
       )}
 
-      {/* Table */}
+      {/* TABLE */}
       {loading ? (
         <p>Loading...</p>
       ) : (
@@ -256,36 +323,41 @@ export default function Rooms({ canBook = false, canDelete = false }) {
               <th>Capacity</th>
               <th>Floor</th>
               <th>Status</th>
-              <th>Action</th>
+              <th>Actions</th>
             </tr>
           </thead>
 
           <tbody>
-            {filteredRooms.length > 0 ? (
-              filteredRooms.map((r) => (
-                <tr key={r.room_id}>
-                  <td>{r.room_number}</td>
-                  <td>{r.capacity}</td>
-                  <td>{r.floor}</td>
-                  <td>{r.status === "free" ? "Free" : "Occupied"}</td>
-                  <td>
-                    {r.status === "free" && canBook && !blockBooking && (
-                      <button onClick={() => handleBook(r.room_id)}>
-                        Book
-                      </button>
-                    )}
+            {filteredRooms.map((r) => (
+              <tr key={r.room_id}>
+                <td>{r.room_number}</td>
+                <td>{r.capacity}</td>
+                <td>{r.floor}</td>
+                <td>{r.status}</td>
 
-                    {r.status === "occupied" && canDelete && (
-                      <button onClick={() => handleCancel(r)}>Cancel</button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="5">No rooms found.</td>
+                <td>
+                  {/* Book */}
+                  {r.status === "free" && canBook && !blockBooking && (
+                    <button onClick={() => handleBook(r.room_id)}>Book</button>
+                  )}
+
+                  {/* Cancel */}
+                  {r.status === "occupied" && canDelete && (
+                    <button onClick={() => handleCancel(r)}>Cancel</button>
+                  )}
+
+                  {/* Schedule */}
+                  <button
+                    style={{ marginLeft: "0.5rem" }}
+                    onClick={() =>
+                      navigate(`/schedule/${r.room_id}?date=${selectedDate}`)
+                    }
+                  >
+                    Schedule
+                  </button>
+                </td>
               </tr>
-            )}
+            ))}
           </tbody>
         </table>
       )}

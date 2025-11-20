@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
-import Rooms from "./Rooms"; 
-//import Login from "./Login";
+import Rooms from "./Rooms";
+import RoomSchedule from "./RoomSchedule";
+import { Routes, Route } from "react-router-dom";
 
 function App() {
   const API_URL =
@@ -26,7 +27,7 @@ function App() {
       }
     }
     if (window.location.search.includes("token")) {
-    window.history.replaceState({}, document.title, "/");
+      window.history.replaceState({}, document.title, "/");
     }
   }, []);
 
@@ -38,9 +39,6 @@ function App() {
 
   const token = localStorage.getItem("token");
 
-  // ==========================
-  // ADMIN: ADD USER
-  // ==========================
   const addUser = async () => {
     const name = prompt("Enter user name:");
     const email = prompt("Enter email:");
@@ -73,9 +71,6 @@ function App() {
     }
   };
 
-  // ==========================
-  // ADMIN: ADD ROOM
-  // ==========================
   const addRoom = async () => {
     const room_number = prompt("Room number:");
     const capacity = prompt("Capacity:");
@@ -115,53 +110,58 @@ function App() {
   };
 
   return (
-    <div className="App">
+    <>
       <h1>BookMyRoom</h1>
       <p>
         Role: <b>{role}</b>
       </p>
 
       {!token ? (
-        <button
-          onClick={() =>
-            (window.location.href = `${API_URL}/auth/github`)
-          }
-        >
+        <button onClick={() => (window.location.href = `${API_URL}/auth/github`)}>
           Sign in with GitHub
         </button>
       ) : (
         <button onClick={logout}>Log out</button>
       )}
 
-      {/* ========================== */}
-      {/*          ROLE UI          */}
-      {/* ========================== */}
+      <Routes>
+        {/* HOME PAGE */}
+        <Route
+          path="/"
+          element={
+            <>
+              {role === "viewer" && (
+                <>
+                  <h3>Room Overview</h3>
+                  <Rooms />
+                </>
+              )}
 
-      {role === "viewer" && (
-        <>
-          <h3>Room Overview</h3>
-          <Rooms />
-        </>
-      )}
+              {role === "employer" && (
+                <>
+                  <h3>Reservations</h3>
+                  <Rooms canBook canDelete />
+                </>
+              )}
 
-      {role === "employer" && (
-        <>
-          <h3>Reservations</h3>
-          <Rooms canBook canDelete />
-        </>
-      )}
+              {role === "admin" && (
+                <>
+                  <h3>Administration</h3>
+                  <button onClick={addUser}>Add user</button>
+                  <button onClick={addRoom} style={{ marginLeft: "0.5rem" }}>
+                    Add room
+                  </button>
+                  <Rooms canBook canDelete />
+                </>
+              )}
+            </>
+          }
+        />
 
-      {role === "admin" && (
-        <>
-          <h3>Administration</h3>
-          <button onClick={addUser}>Add user</button>
-          <button onClick={addRoom} style={{ marginLeft: "0.5rem" }}>
-            Add room
-          </button>
-          <Rooms canBook canDelete />
-        </>
-      )}
-    </div>
+        {/* SCHEDULE PAGE */}
+        <Route path="/schedule/:roomId" element={<RoomSchedule />} />
+      </Routes>
+    </>
   );
 }
 
