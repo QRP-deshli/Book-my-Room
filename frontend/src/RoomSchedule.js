@@ -3,16 +3,16 @@ import { useNavigate } from "react-router-dom";
 
 export default function RoomSchedule() {
     const API_URL = "http://localhost:5000";
-    
+
     const [reservations, setReservations] = useState([]);
     const [duration, setDuration] = useState("1 hour");
-    
+
     const roomId = window.location.pathname.split("/").pop();
     const date = new URLSearchParams(window.location.search).get("date");
     const token = localStorage.getItem("token");
     const navigate = useNavigate();
 
-    const HOUR_HEIGHT = 50;
+    const HOUR_HEIGHT = 51;
     const [pendingTime, setPendingTime] = useState(null);
 
     // Klik na timeline
@@ -27,12 +27,25 @@ export default function RoomSchedule() {
         const mm = String(minutes - (minutes % 15)).padStart(2, "0");
 
         setPendingTime(`${hh}:${mm}`);
+
+        // Zákaz booking na minulé časy (len pre dnešný deň)
+        const now = new Date();
+        const today = new Date().toISOString().slice(0, 10);
+
+        if (date === today) {
+            const clicked = new Date(`${date}T${hh}:${mm}:00`);
+            if (clicked < now) {
+                alert("Cannot reserve past time.");
+                return;
+            }
+        }
+
     }
 
     // Načítanie rezervácií
     useEffect(() => {
         console.log("Fetching schedule:", `${API_URL}/api/schedule?room_id=${roomId}&date=${date}`);
-        
+
         fetch(`${API_URL}/api/schedule?room_id=${roomId}&date=${date}`, {
             headers: { Authorization: `Bearer ${token}` }
         })
@@ -50,6 +63,17 @@ export default function RoomSchedule() {
     // 🔥 PRIAME BOOKOVANIE
     const handleBook = async () => {
         if (!pendingTime) return;
+
+        // Kontrola proti minulému času
+        const now = new Date();
+        const today = new Date().toISOString().slice(0, 10);
+        if (date === today) {
+            const clicked = new Date(`${date}T${pendingTime}:00`);
+            if (clicked < now) {
+                alert("Cannot reserve past time.");
+                return;
+            }
+        }
 
         const confirm = window.confirm(
             `Reserve room ${roomId} on ${date} at ${pendingTime} for ${duration}?`
@@ -74,11 +98,11 @@ export default function RoomSchedule() {
             });
 
             const data = await res.json();
-            
+
             if (res.ok) {
                 alert(`✅ Reservation confirmed at ${pendingTime}`);
                 setPendingTime(null);
-                
+
                 // Refresh rezervácií
                 const refreshRes = await fetch(
                     `${API_URL}/api/schedule?room_id=${roomId}&date=${date}`,
@@ -86,7 +110,7 @@ export default function RoomSchedule() {
                 );
                 const refreshData = await refreshRes.json();
                 setReservations(refreshData || []);
-                
+
             } else {
                 alert(`❌ ${data.error || "Reservation failed"}`);
             }
@@ -105,7 +129,7 @@ export default function RoomSchedule() {
             {pendingTime && (
                 <div style={{ margin: "1rem 0", padding: "1rem", background: "#f0f0f0", borderRadius: "4px" }}>
                     <b>Selected time:</b> {pendingTime}
-                    
+
                     <label style={{ marginLeft: "1rem" }}>
                         Duration:
                         <select
@@ -128,7 +152,7 @@ export default function RoomSchedule() {
                     >
                         Book Now
                     </button>
-                    
+
                     <button
                         style={{ marginLeft: "0.5rem" }}
                         onClick={() => setPendingTime(null)}
@@ -157,7 +181,10 @@ export default function RoomSchedule() {
                             height: HOUR_HEIGHT,
                             borderTop: "1px solid #444",
                             paddingLeft: "5px",
-                            color: "#777"
+                            color: "#777",
+                            margin: 0,
+                            boxSizing: "border-box",
+                            display: "flex",
                         }}
                     >
                         {h}:00
@@ -191,7 +218,8 @@ export default function RoomSchedule() {
                                 alignItems: "center",
                                 justifyContent: "center",
                                 color: "white",
-                                fontWeight: "bold"
+                                fontWeight: "bold",
+                                boxSizing: "border-box"
                             }}
                         >
                             Reserved: {r.start_time} - {r.end_time}
