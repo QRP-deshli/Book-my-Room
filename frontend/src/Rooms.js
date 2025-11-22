@@ -11,7 +11,23 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   const [selectedDate, setSelectedDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
-  const [startTime, setStartTime] = useState("09:00");
+  
+  const [startTime, setStartTime] = useState(() => {
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const roundedMinutes = Math.ceil(minutes / 15) * 15;
+    
+    let hours = now.getHours();
+    let mins = roundedMinutes;
+    
+    if (mins >= 60) {
+      hours += 1;
+      mins = 0;
+    }
+    
+    return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+  });
+
   const [duration, setDuration] = useState("1 hour");
   const [search, setSearch] = useState("");
   const [suggestedSlot, setSuggestedSlot] = useState(null);
@@ -31,7 +47,74 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     ).padStart(2, "0")}`;
   };
 
-  // FETCH ROOMS - PRIDANÝ location.key do dependencies
+  // 🔥 VÝPOČET NAJBLIŽŠIEHO VOĽNÉHO ČASU (len pre konkrétnu miestnosť)
+  const calculateNextFreeSlotForRoom = (room, startTime, selectedDate) => {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    
+    // Ak je vybraný minulý deň, nie je žiadny voľný slot
+    if (selectedDate < today) return null;
+    
+    // Aktuálny čas alebo zadaný čas
+    let currentTime = startTime;
+    if (selectedDate === today) {
+      const nowTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      if (startTime < nowTime) {
+        currentTime = nowTime;
+      }
+    }
+
+    // Funkcia na kontrolu, či je čas voľný v danej miestnosti
+    const isTimeFree = (time) => {
+      const [h, m] = time.split(":").map(Number);
+      const timeInMinutes = h * 60 + m;
+
+      const reservations = room.allReservations || [];
+      
+      for (const res of reservations) {
+        const [sh, sm] = res.start_time.split(":").map(Number);
+        const [eh, em] = res.end_time.split(":").map(Number);
+        
+        const startMinutes = sh * 60 + sm;
+        const endMinutes = eh * 60 + em;
+        
+        // Ak čas koliduje s rezerváciou
+        if (timeInMinutes >= startMinutes && timeInMinutes < endMinutes) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    // Hľadaj najbližší voľný 15-min slot
+    let [hours, minutes] = currentTime.split(":").map(Number);
+    
+    // Zaokrúhli na najbližších 15 minút
+    minutes = Math.ceil(minutes / 15) * 15;
+    if (minutes >= 60) {
+      hours += 1;
+      minutes = 0;
+    }
+
+    // Kontroluj každých 15 minút až do 23:45
+    while (hours < 24) {
+      const testTime = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+      
+      if (isTimeFree(testTime)) {
+        return testTime;
+      }
+      
+      minutes += 15;
+      if (minutes >= 60) {
+        hours += 1;
+        minutes = 0;
+      }
+    }
+
+    return null; // Žiadny voľný slot dnes
+  };
+
+  // FETCH ROOMS
   useEffect(() => {
     setLoading(true);
 
@@ -47,16 +130,25 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         }));
 
         setRooms(processed);
-        setSuggestedSlot(data.nextFreeSlot || null);
+        setSuggestedSlot(null); // Vynuluj - vypočíta sa neskôr
       })
-
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
-  }, [selectedDate, startTime, search, token, location.key]); // 🔥 location.key spôsobí refresh
+  }, [selectedDate, startTime, search, token, location.key]);
 
   const filteredRooms = rooms.filter((r) =>
     filter === "all" ? true : r.status === filter
   );
+
+  // 🔥 Vypočítaj next free slot len ak je presne 1 výsledok
+  useEffect(() => {
+    if (search && filteredRooms.length === 1) {
+      const slot = calculateNextFreeSlotForRoom(filteredRooms[0], startTime, selectedDate);
+      setSuggestedSlot(slot);
+    } else {
+      setSuggestedSlot(null);
+    }
+  }, [filteredRooms, startTime, selectedDate, search]);
 
   // BOOK
   const handleBook = async (roomId, customTime = null, customDate = null) => {
@@ -109,135 +201,82 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   };
 
   // CANCEL
-  /*const handleCancel = async (room) => {
-    if (!room.active_reservation_id) {
-      alert("No active reservation found");
+  const handleCancel = async (room) => {
+    const all = room.allReservations || [];
+
+    if (all.length === 0) {
+      alert("This room has no reservations for selected day.");
       return;
     }
 
+    let msg = "Which reservation do you want to cancel?\n\n";
+    all.forEach((r, i) => {
+      msg += `${i + 1}) ${r.start_time} - ${r.end_time}\n`;
+    });
+    msg += "\nEnter number:";
+
+    const input = prompt(msg);
+    if (!input) return;
+
+    const index = parseInt(input) - 1;
+    if (isNaN(index) || index < 0 || index >= all.length) {
+      alert("Invalid selection.");
+      return;
+    }
+
+    const chosen = all[index];
+
+    const ok = window.confirm(
+      `Cancel reservation?\n\nRoom: ${room.room_number}\nTime: ${chosen.start_time} - ${chosen.end_time}`
+    );
+    if (!ok) return;
+
     try {
-      const resInfo = await fetch(
-        `${API_URL}/api/reservation/${room.active_reservation_id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      const res = await fetch(
+        `${API_URL}/api/cancel-reservation/${chosen.reservation_id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
 
-      const info = await resInfo.json();
-      if (!resInfo.ok) {
-        alert(`${info.error || "Reservation not found"}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Cancellation failed");
         return;
       }
 
-      const confirm = window.confirm(
-        `Cancel reservation for room ${info.room_number}\nDate: ${info.reservation_date}\nStart: ${info.start_time}`
-      );
-      if (!confirm) return;
+      alert("Reservation canceled");
 
-      const res = await fetch(
-        `${API_URL}/api/cancel-reservation/${room.active_reservation_id}`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.room_id === room.room_id
+            ? {
+                ...r,
+                status: r.allReservations.length - 1 > 0 ? "occupied" : "free",
+                active_reservation_id:
+                  r.allReservations.length - 1 > 0
+                    ? r.allReservations[0].reservation_id
+                    : null,
+                allReservations: r.allReservations.filter(
+                  (x) => x.reservation_id !== chosen.reservation_id
+                ),
+              }
+            : r
+        )
       );
-
-      if (res.ok) {
-        alert("Reservation canceled");
-        setRooms((prev) =>
-          prev.map((r) =>
-            r.room_id === room.room_id
-              ? { ...r, status: "free", active_reservation_id: null }
-              : r
-          )
-        );
-      } else {
-        const data = await res.json();
-        alert(`${data.error || "Cancellation failed"}`);
-      }
     } catch (err) {
       console.error(err);
-      alert("Server connection error");
+      alert("Server error.");
     }
-  };*/
-
-  // CANCEL
-  const handleCancel = async (room) => {
-  const all = room.all_reservations || [];
-
-  if (all.length === 0) {
-    alert("This room has no reservations for selected day.");
-    return;
-  }
-
-  // Výpis rezervácií
-  let msg = "Which reservation do you want to cancel?\n\n";
-  all.forEach((r, i) => {
-    msg += `${i + 1}) ${r.start_time} - ${r.end_time}\n`;
-  });
-  msg += "\nEnter number:";
-
-  const input = prompt(msg);
-  if (!input) return;
-
-  const index = parseInt(input) - 1;
-  if (isNaN(index) || index < 0 || index >= all.length) {
-    alert("Invalid selection.");
-    return;
-  }
-
-  const chosen = all[index];
-
-  // Potvrdenie
-  const ok = window.confirm(
-    `Cancel reservation?\n\nRoom: ${room.room_number}\nTime: ${chosen.start_time} - ${chosen.end_time}`
-  );
-  if (!ok) return;
-
-  try {
-    const res = await fetch(
-      `${API_URL}/api/cancel-reservation/${chosen.reservation_id}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert(data.error || "Cancellation failed");
-      return;
-    }
-
-    alert("Reservation canceled");
-
-    // Lokálny update tabuľky
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.room_id === room.room_id
-          ? {
-              ...r,
-              status: r.all_reservations.length - 1 > 0 ? "occupied" : "free",
-              active_reservation_id:
-                r.all_reservations.length - 1 > 0
-                  ? r.all_reservations[0].reservation_id
-                  : null,
-              all_reservations: r.all_reservations.filter(
-                (x) => x.reservation_id !== chosen.reservation_id
-              ),
-            }
-          : r
-      )
-    );
-  } catch (err) {
-    console.error(err);
-    alert("Server error.");
-  }
-};
-
+  };
 
   const today = new Date().toISOString().slice(0, 10);
   const blockPastDate = selectedDate < today;
-  const blockPastTime =
-    selectedDate === today && startTime < getMinTime();
+  const blockPastTime = selectedDate === today && startTime < getMinTime();
   const blockBooking = blockPastDate || blockPastTime;
 
   return (
@@ -305,10 +344,16 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         <button onClick={() => setFilter("occupied")}>Occupied</button>
       </div>
 
-      {/* Suggested slot */}
-      {suggestedSlot && (
-        <div style={{ color: "green" }}>
-          Next free slot: <b>{suggestedSlot}</b>
+      {/* Suggested slot - zobraz len ak je presne zadaná miestnosť */}
+      {search && filteredRooms.length === 1 && suggestedSlot && (
+        <div style={{ color: "green", marginBottom: "1rem" }}>
+          Next free slot for <b>{filteredRooms[0].room_number}</b>: <b>{suggestedSlot}</b>
+        </div>
+      )}
+
+      {search && filteredRooms.length === 1 && !suggestedSlot && selectedDate >= today && (
+        <div style={{ color: "orange", marginBottom: "1rem" }}>
+          No free slots available for <b>{filteredRooms[0].room_number}</b> today
         </div>
       )}
 
