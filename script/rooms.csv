@@ -1,4 +1,4 @@
-cislo_miestnosti,kapacita,poschodie,budova_adresa
+room_number,capacity,floor,building_address
 A103,18,1,Letná 9
 A104,22,1,Letná 9
 B202,35,2,Technická 1

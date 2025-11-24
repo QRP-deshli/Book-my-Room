@@ -110,6 +110,109 @@ function App() {
     }
   };
 
+  const runImportCsv = async () => {
+  const res = await fetch(`${API_URL}/api/admin/import-csv`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await res.json();
+  alert(data.message || data.error);
+  };
+
+  const runExportCsv = async () => {
+  const res = await fetch(`${API_URL}/api/admin/export-csv`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await res.json();
+  alert(data.message || data.error);
+  };
+
+  const deleteUser = async () => {
+  const res = await fetch(`${API_URL}/api/admin/users`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await res.json();
+  const users = data.users;
+
+  let msg = "Select user to delete:\n\n";
+  users.forEach((u, i) => {
+    msg += `${i + 1}) ${u.name} (${u.email})\n`;
+  });
+
+  const sel = parseInt(prompt(msg));
+  if (!sel || isNaN(sel) || sel < 1 || sel > users.length) return;
+
+  const userId = users[sel - 1].user_id;
+
+  const del = await fetch(`${API_URL}/api/admin/delete-user/${userId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const out = await del.json();
+  alert(out.message || out.error);
+};
+
+const deleteRoom = async () => {
+  const res = await fetch(`${API_URL}/api/rooms?date=2025-01-01`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const rooms = (await res.json()).rooms;
+
+  let msg = "Select room to delete:\n\n";
+  rooms.forEach((r, i) => {
+    msg += `${i + 1}) ${r.room_number} — capacity ${r.capacity}\n`;
+  });
+
+  const sel = parseInt(prompt(msg));
+  if (!sel || isNaN(sel) || sel < 1 || sel > rooms.length) return;
+
+  const roomId = rooms[sel - 1].room_id;
+
+  const del = await fetch(`${API_URL}/api/admin/delete-room/${roomId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const out = await del.json();
+  alert(out.message || out.error);
+};
+
+const modifyRole = async () => {
+  // OPRAVA: fetch() namiesto fetch``
+  const res = await fetch(`${API_URL}/api/admin/users`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await res.json();
+  const users = data.users;
+  
+  let msg = "Select user to modify role:\n\n";
+  users.forEach((u, i) => {
+    msg += `${i + 1}) ${u.name} (${u.email}) — current role: ${u.role_name}\n`;
+  });
+  
+  const sel = parseInt(prompt(msg));
+  if (!sel || isNaN(sel) || sel < 1 || sel > users.length) return;
+  
+  const userId = users[sel - 1].user_id;
+  const newRole = prompt("Enter new role: viewer / employer / admin");
+  if (!newRole) return;
+  
+  // OPRAVA: fetch() namiesto fetch``
+  const req = await fetch(`${API_URL}/api/admin/change-role`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ user_id: userId, role: newRole })
+  });
+  
+  const out = await req.json();
+  alert(out.message || out.error);
+};
+
   return (
     <>
       <h1>BookMyRoom</h1>
@@ -152,6 +255,11 @@ function App() {
                   <button onClick={addRoom} style={{ marginLeft: "0.5rem" }}>
                     Add room
                   </button>
+                  <button onClick={runImportCsv} style={{ marginLeft: "0.5rem" }}>Import CSV</button>
+                  <button onClick={runExportCsv} style={{ marginLeft: "0.5rem" }}>Export CSV</button>
+                  <button onClick={deleteUser} style={{ marginLeft: "0.5rem" }}>Delete user</button>
+                  <button onClick={deleteRoom} style={{ marginLeft: "0.5rem" }}>Delete room</button>
+                  <button onClick={modifyRole} style={{ marginLeft: "0.5rem" }}>Modify roles</button>
                   <Rooms canBook canDelete />
                 </>
               )}

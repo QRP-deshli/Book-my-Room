@@ -6,6 +6,7 @@ import session from "express-session";
 import passport from "passport";
 import { Strategy as GitHubStrategy } from "passport-github2";
 import jwt from "jsonwebtoken";
+import { exec } from "child_process";
 
 console.log("🔥 server.js loaded");
 
@@ -603,6 +604,103 @@ app.post(
       res.status(201).json(insert.rows[0]);
     } catch (err) {
       console.error("Error adding room:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// ===============================
+// CSV IMPORT / EXPORT ENDPOINTS
+// ===============================
+
+function runScript(script, callback) {
+  exec(`python ../script/${script}`, (error, stdout, stderr) => {
+    if (error) return callback(stderr || error.message);
+    return callback(null, stdout);
+  });
+}
+
+app.post("/api/admin/import-csv", verifyToken, requireRole("admin"), (req, res) => {
+  runScript("import_csv.py", (err, out) => {
+    if (err) return res.status(500).json({ error: err });
+    res.json({ message: "CSV import completed", log: out });
+  });
+});
+
+app.post("/api/admin/export-csv", verifyToken, requireRole("admin"), (req, res) => {
+  runScript("export_csv.py", (err, out) => {
+    if (err) return res.status(500).json({ error: err });
+    res.json({ message: "CSV export completed", log: out });
+  });
+});
+
+// ===============================
+// DELETE USER
+// ===============================
+
+app.delete(
+  "/api/admin/delete-user/:id",
+  verifyToken,
+  requireRole("admin"),
+  async (req, res) => {
+    const { id } = req.params;
+    const result = await pool.query(
+      "DELETE FROM users WHERE user_id = $1 RETURNING *",
+      [id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: "User not found" });
+    res.json({ message: "User deleted successfully" });
+  }
+);
+
+
+// ===============================
+// ADMIN: GET ALL USERS
+// ===============================
+app.get(
+  "/api/admin/users",
+  verifyToken,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT u.user_id, u.name, u.email, r.name as role_name 
+         FROM users u 
+         JOIN roles r ON u.role_id = r.role_id 
+         ORDER BY u.user_id`
+      );
+      res.json({ users: result.rows });
+    } catch (err) {
+      console.error("Error fetching users:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// ===============================
+// ADMIN: MODIFY USER ROLE
+// ===============================
+app.post(
+  "/api/admin/change-role",
+  verifyToken,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const { user_id, role } = req.body;
+      const roleRes = await pool.query(
+        "SELECT role_id FROM roles WHERE name = $1",
+        [role]
+      );
+      if (roleRes.rows.length === 0) {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+      await pool.query(
+        "UPDATE users SET role_id = $1 WHERE user_id = $2",
+        [roleRes.rows[0].role_id, user_id]
+      );
+      res.json({ message: "Role updated successfully" });
+    } catch (err) {
+      console.error("Error updating role:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   }

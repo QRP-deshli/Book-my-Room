@@ -1,4 +1,4 @@
-meno,email,rola
+name,email,role
 Peter Kovac,peter.kovac@example.com,viewer
 Maria Novakova,maria.novakova@example.com,employer
 Andrej Horvath,andrej.horvath@example.com,admin

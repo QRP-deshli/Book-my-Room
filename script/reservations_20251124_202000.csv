@@ -1,0 +1,6 @@
+﻿room_number,user_email,date,start_time,duration,created
+A101,nikita@example.com,2025-10-28,11:00:00,2:00:00,2025-11-24
+A102,tibor@example.com,2025-10-29,09:00:00,1:30:00,2025-11-24
+B201,juraj@example.com,2025-11-02,14:30:00,3:00:00,2025-11-24
+C301,nikodem@example.com,2025-11-03,08:00:00,0:45:00,2025-11-24
+D105,karolina@example.com,2025-11-04,16:00:00,1:00:00,2025-11-24
