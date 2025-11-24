@@ -132,7 +132,7 @@
 
 &nbsp;  ```bash
 
-&nbsp;  npm start
+&nbsp;  npm run dev
 
 &nbsp;  ```
 
