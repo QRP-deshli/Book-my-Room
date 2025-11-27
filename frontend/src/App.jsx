@@ -215,6 +215,7 @@ const modifyRole = async () => {
 
   return (
     <>
+    <div className="App">
       <h1>BookMyRoom</h1>
       <p>
         Role: <b>{role}</b>
@@ -270,6 +271,7 @@ const modifyRole = async () => {
         {/* SCHEDULE PAGE */}
         <Route path="/schedule/:roomId" element={<RoomSchedule />} />
       </Routes>
+        </div>
     </>
   );
 }

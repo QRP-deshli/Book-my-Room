@@ -654,6 +654,26 @@ app.delete(
 );
 
 
+
+// ===============================
+// DELETE ROOM
+// ===============================
+
+app.delete(
+  "/api/admin/delete-room/:id",
+  verifyToken,
+  requireRole("admin"),
+  async (req, res) => {
+    const { id } = req.params;
+    const result = await pool.query(
+      "DELETE FROM rooms WHERE room_id = $1 RETURNING *",
+      [id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: "Room not found" });
+    res.json({ message: "Room deleted successfully" });
+  }
+);
+
 // ===============================
 // ADMIN: GET ALL USERS
 // ===============================

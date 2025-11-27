@@ -5,9 +5,9 @@ from datetime import datetime
 
 DB_CONFIG = {
     'host': 'localhost',
-    'database': 'bmr_db',
+    'database': 'db',
     'user': 'postgres',
-    'password': 'heslo'
+    'password': 'kitty_meow_meow'
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
