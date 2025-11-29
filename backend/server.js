@@ -452,7 +452,7 @@ app.get("/api/room-schedule/:roomId", async (req, res) => {
 
     const query = `
       SELECT r.reservation_id, r.reservation_date, r.start_time,
-             r.duration, u.name AS user_name
+             r.duration, r.user_id, u.name AS user_name
       FROM reservations r
       JOIN users u ON r.user_id = u.user_id
       WHERE r.room_id = $1
@@ -486,13 +486,14 @@ app.get("/api/schedule", async (req, res) => {
         r.start_time,
         (r.start_time + r.duration) AS end_time,
         r.duration, 
+        r.user_id,
         u.name AS user_name
       FROM reservations r
       JOIN users u ON r.user_id = u.user_id
       WHERE r.room_id = $1
         AND r.reservation_date = $2
       ORDER BY r.start_time;
-    `;
+`;
 
     const result = await pool.query(query, [room_id, date]);
     res.json(result.rows);
