@@ -11,26 +11,50 @@ function App() {
   const [role, setRole] = useState("viewer");
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token") || localStorage.getItem("token");
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token") || localStorage.getItem("token");
 
-    if (token) {
-      localStorage.setItem("token", token);
+  if (token) {
+    localStorage.setItem("token", token);
 
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        setRole(payload.role);
-      } catch (e) {
-        console.error("Invalid token");
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      setRole(payload.role);
+
+      // -------------------------------------------
+      // AUTOMATIC LOGOUT WHEN TOKEN EXPIRES
+      // -------------------------------------------
+      const expiresAt = payload.exp * 1000; // exp v sekundách → ms
+      const now = Date.now();
+      const timeLeft = expiresAt - now;
+
+      if (timeLeft > 0) {
+        // token ešte platí → nastavíme auto-logout
+        setTimeout(() => {
+          alert("Session is ended");
+          localStorage.removeItem("token");
+          window.location.replace("/"); // HARD reload = okamžité odhlásenie
+        }, timeLeft);
+      } else {
+        // token už expiroval → okamžité odhlásenie
+        alert("Session is ended");
         localStorage.removeItem("token");
+        window.location.replace("/");
       }
-    }
+      // -------------------------------------------
 
-    // Po načítaní tokenu prepis URL na "/"
-    if (params.get("token")) {
-      window.history.replaceState({}, document.title, "/");
+    } catch (e) {
+      console.error("Invalid token");
+      localStorage.removeItem("token");
     }
-  }, []);
+  }
+
+  // odstránenie tokenu z URL
+  if (params.get("token")) {
+    window.history.replaceState({}, document.title, "/");
+  }
+}, []);
+
 
   const logout = () => {
     localStorage.removeItem("token");
