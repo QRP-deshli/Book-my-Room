@@ -117,6 +117,8 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     )}`;
   };
 
+
+
   // OVERLAP CHECK
   const checkOverlap = (start1, end1, start2, end2) => {
     const toMinutes = (t) => {
@@ -244,6 +246,8 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     }
   }, [filteredRooms, startTime, selectedDate, search, duration]);
 
+  
+
   const handleBook = async (roomId, customTime = null, customDate = null) => {
     const bookingTime = customTime || startTime;
     const bookingDate = customDate || selectedDate;
@@ -283,14 +287,136 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     }
   };
 
+    // CANCEL
+  const handleCancel = async (room) => {
+    const overlapping = getOverlappingReservations(room);
+
+    if (overlapping.length === 0) {
+      alert("No reservations overlap with the selected time.");
+      return;
+    }
+
+    let msg = `Found ${overlapping.length} overlapping reservation(s):\n\n`;
+    overlapping.forEach((r, i) => {
+      msg += `${i + 1}) ${r.start_time} - ${r.end_time}\n`;
+    });
+    
+    if (overlapping.length === 1) {
+      msg += "\nCancel this reservation?";
+      const ok = window.confirm(msg);
+      if (!ok) return;
+      
+      await cancelReservation(overlapping[0], room);
+    } else {
+      msg += "\nOptions:\n";
+      msg += "- Enter number(s) separated by comma (e.g., 1,3)\n";
+      msg += "- Enter 'all' to cancel all\n";
+      msg += "- Click Cancel to abort";
+      
+      const input = prompt(msg);
+      if (!input) return;
+
+      let toCancelIndices = [];
+      
+      if (input.toLowerCase().trim() === "all") {
+        toCancelIndices = overlapping.map((_, i) => i);
+      } else {
+        const parts = input.split(",").map(s => s.trim());
+        for (const part of parts) {
+          const idx = parseInt(part) - 1;
+          if (!isNaN(idx) && idx >= 0 && idx < overlapping.length) {
+            toCancelIndices.push(idx);
+          }
+        }
+      }
+
+      if (toCancelIndices.length === 0) {
+        alert("Invalid selection.");
+        return;
+      }
+
+      const confirmMsg = `Cancel ${toCancelIndices.length} reservation(s)?`;
+      if (!window.confirm(confirmMsg)) return;
+
+      for (const idx of toCancelIndices) {
+        await cancelReservation(overlapping[idx], room);
+      }
+    }
+
+    // Refresh after cancellation
+    window.location.reload();
+  };
+
+  const cancelReservation = async (reservation, room) => {
+    try {
+      const res = await fetch(
+        `${API_URL}/api/cancel-reservation/${reservation.reservation_id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Cancellation failed");
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error(err);
+      alert("Server error.");
+      return false;
+    }
+  };
+
   const today = new Date().toISOString().slice(0, 10);
   const blockPastDate = selectedDate < today;
   const blockPastTime = selectedDate === today && startTime < getMinTime();
   const blockBooking = blockPastDate || blockPastTime;
 
+    // Get timezone info for display
+  const getTimezoneDisplay = () => {
+    try {
+      const localOffset = new Date().getTimezoneOffset();
+      const bratislavaOffset = -60; // Bratislava is UTC+1 (offset in minutes, negative means ahead)
+      
+      if (localOffset === bratislavaOffset) {
+        return null; // Same timezone, no need to show
+      }
+      
+      const offsetHours = Math.abs(localOffset / 60);
+      const offsetSign = localOffset > 0 ? "-" : "+";
+      
+      return `Times shown in your local timezone (UTC${offsetSign}${offsetHours}). Server uses Europe/Bratislava (UTC+1).`;
+    } catch (error) {
+      return null;
+    }
+  };
+
+
   return (
     <div style={{ padding: "1rem" }}>
       <h2>Room Reservations</h2>
+
+       {/* Timezone info */}
+      {getTimezoneDisplay() && (
+        <div style={{ 
+          backgroundColor: "#f0f8ff", 
+          padding: "0.5rem", 
+          marginBottom: "1rem", 
+          borderRadius: "4px",
+          fontSize: "0.9em",
+          color: "#555"
+        }}>
+            {getTimezoneDisplay()}
+        </div>
+      )}
+
 
       <div>
         <label>
@@ -322,6 +448,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
             type="time"
             value={startTime}
             min={getMinTime()}
+            step="300"
             onChange={(e) => setStartTime(e.target.value)}
             style={{ marginLeft: "0.5rem" }}
           />
@@ -391,6 +518,9 @@ export default function Rooms({ canBook = false, canDelete = false }) {
                   <td>
                     {r.status === "free" && canBook && !blockBooking && (
                       <button onClick={() => handleBook(r.room_id)}>Book</button>
+                    )}
+                    {overlapping.length > 0 && canDelete && (
+                      <button onClick={() => handleCancel(r)}>Cancel</button>
                     )}
 
                     <button
