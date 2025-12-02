@@ -67,7 +67,7 @@ function App() {
   const addUser = async () => {
     const name = prompt("Enter user name:");
     const email = prompt("Enter email:");
-    const role = prompt("Role: viewer, employer, admin");
+    const role = prompt("Role: viewer, employee, admin");
 
     if (!name || !email || !role) {
       alert("❌ All fields are required");
