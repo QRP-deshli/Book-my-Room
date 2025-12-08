@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function Rooms({ canBook = false, canDelete = false }) {
-  const API_URL = "http://localhost:5000";
+   const API_URL =
+    process.env.REACT_APP_API_URL ||
+    "https://book-my-room-pn00.onrender.com";
 
   const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState("all");
