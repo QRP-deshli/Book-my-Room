@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function RoomSchedule() {
-    const API_URL = "http://localhost:5000";
+     const API_URL =
+    process.env.REACT_APP_API_URL ||
+    "https://book-my-room-pn00.onrender.com";
 
     // Server timezone (Bratislava = UTC+1)
     const SERVER_TIMEZONE = "Europe/Bratislava";
