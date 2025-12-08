@@ -246,7 +246,7 @@ const modifyRole = async () => {
       </p>
 
       {!token ? (
-        <button onClick={() => (window.location.href = `${API_URL}/auth/github?redirect=${import.meta.env.VITE_FRONTEND_URL}`)}>
+        <button onClick={() => (window.location.href = `${API_URL}/auth/github?redirect=${API_URL}`)}>
           Sign in with GitHub
         </button>
       ) : (
