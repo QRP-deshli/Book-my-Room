@@ -12,42 +12,40 @@ function App() {
 
   useEffect(() => {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get("token") || localStorage.getItem("token");
+const urlToken = params.get("token");
 
-  if (token) {
-    localStorage.setItem("token", token);
+if (urlToken) {
+  localStorage.setItem("token", urlToken);
+  setToken(urlToken); // <-- this triggers React re-render
 
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      setRole(payload.role);
+  try {
+    const payload = JSON.parse(atob(urlToken.split(".")[1]));
+    setRole(payload.role);
 
-      // -------------------------------------------
-      // AUTOMATIC LOGOUT WHEN TOKEN EXPIRES
-      // -------------------------------------------
-      const expiresAt = payload.exp * 1000; // exp v sekundách → ms
-      const now = Date.now();
-      const timeLeft = expiresAt - now;
+    const expiresAt = payload.exp * 1000;
+    const now = Date.now();
+    const timeLeft = expiresAt - now;
 
-      if (timeLeft > 0) {
-        // token ešte platí → nastavíme auto-logout
-        setTimeout(() => {
-          alert("Session is ended");
-          localStorage.removeItem("token");
-          window.location.replace("/"); // HARD reload = okamžité odhlásenie
-        }, timeLeft);
-      } else {
-        // token už expiroval → okamžité odhlásenie
+    if (timeLeft > 0) {
+      setTimeout(() => {
         alert("Session is ended");
         localStorage.removeItem("token");
+        setToken(null); // <-- clear state on logout
         window.location.replace("/");
-      }
-      // -------------------------------------------
-
-    } catch (e) {
-      console.error("Invalid token");
+      }, timeLeft);
+    } else {
+      alert("Session is ended");
       localStorage.removeItem("token");
+      setToken(null);
+      window.location.replace("/");
     }
+  } catch (e) {
+    console.error("Invalid token");
+    localStorage.removeItem("token");
+    setToken(null);
   }
+}
+
 
   // odstránenie tokenu z URL
   if (params.get("token")) {
@@ -62,7 +60,7 @@ function App() {
     window.location.reload();
   };
 
-  const token = localStorage.getItem("token");
+ const [token, setToken] = useState(localStorage.getItem("token") || null);
 
   const addUser = async () => {
     const name = prompt("Enter user name:");
