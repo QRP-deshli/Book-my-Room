@@ -57,6 +57,7 @@ if (urlToken) {
   const logout = () => {
     localStorage.removeItem("token");
     setRole("viewer");
+    setToken(null);
     window.location.reload();
   };
 
