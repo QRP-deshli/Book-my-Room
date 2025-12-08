@@ -5,70 +5,70 @@ import RoomSchedule from "./RoomSchedule.jsx";
 import { Routes, Route } from "react-router-dom";
 
 function App() {
-  // Používa premennú z Vite .env
-  const API_URL = import.meta.env.VITE_API_URL || "https://book-my-room-pn00.onrender.com";
+  const API_URL =
+    import.meta.env.VITE_API_URL || "https://book-my-room-pn00.onrender.com";
 
+  const [token, setToken] = useState(localStorage.getItem("token") || null);
   const [role, setRole] = useState("viewer");
 
+  // Initialize token from URL or localStorage
   useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-const urlToken = params.get("token");
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token");
 
-if (urlToken) {
-  localStorage.setItem("token", urlToken);
-  setToken(urlToken); // <-- this triggers React re-render
+    if (urlToken) {
+      localStorage.setItem("token", urlToken);
+      setToken(urlToken); // update state
+      window.history.replaceState({}, document.title, "/"); // clean URL
+    }
+  }, []);
 
-  try {
-    const payload = JSON.parse(atob(urlToken.split(".")[1]));
-    setRole(payload.role);
+  // Update role and set auto-logout
+  useEffect(() => {
+    if (!token) return;
 
-    const expiresAt = payload.exp * 1000;
-    const now = Date.now();
-    const timeLeft = expiresAt - now;
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      setRole(payload.role);
 
-    if (timeLeft > 0) {
-      setTimeout(() => {
-        alert("Session is ended");
+      const expiresAt = payload.exp * 1000;
+      const timeLeft = expiresAt - Date.now();
+
+      if (timeLeft > 0) {
+        const timer = setTimeout(() => {
+          alert("Session ended");
+          localStorage.removeItem("token");
+          setToken(null);
+          setRole("viewer");
+        }, timeLeft);
+
+        return () => clearTimeout(timer);
+      } else {
         localStorage.removeItem("token");
-        setToken(null); // <-- clear state on logout
-        window.location.replace("/");
-      }, timeLeft);
-    } else {
-      alert("Session is ended");
+        setToken(null);
+        setRole("viewer");
+      }
+    } catch (e) {
+      console.error("Invalid token", e);
       localStorage.removeItem("token");
       setToken(null);
-      window.location.replace("/");
+      setRole("viewer");
     }
-  } catch (e) {
-    console.error("Invalid token");
-    localStorage.removeItem("token");
-    setToken(null);
-  }
-}
-
-
-  // odstránenie tokenu z URL
-  if (params.get("token")) {
-    window.history.replaceState({}, document.title, "/");
-  }
-}, []);
-
+  }, [token]);
 
   const logout = () => {
     localStorage.removeItem("token");
-    setRole("viewer");
     setToken(null);
-    window.location.reload();
+    setRole("viewer");
   };
 
- const [token, setToken] = useState(localStorage.getItem("token") || null);
-
+  // --- Admin / User functions ---
   const addUser = async () => {
     const name = prompt("Enter user name:");
     const email = prompt("Enter email:");
-    const role = prompt("Role: viewer, employee, admin");
+    const roleInput = prompt("Role: viewer, employee, admin");
 
-    if (!name || !email || !role) {
+    if (!name || !email || !roleInput) {
       alert("❌ All fields are required");
       return;
     }
@@ -80,15 +80,10 @@ if (urlToken) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ name, email, role }),
+        body: JSON.stringify({ name, email, role: roleInput }),
       });
-
       const data = await res.json();
-      if (res.ok) {
-        alert(`✅ User '${name}' added.`);
-      } else {
-        alert(`❌ ${data.error || "Failed to add user"}`);
-      }
+      alert(res.ok ? `✅ User '${name}' added.` : `❌ ${data.error}`);
     } catch (err) {
       console.error(err);
       alert("❌ Server error");
@@ -120,13 +115,8 @@ if (urlToken) {
           building_id: Number(building_id),
         }),
       });
-
       const data = await res.json();
-      if (res.ok) {
-        alert(`✅ Room '${room_number}' added.`);
-      } else {
-        alert(`❌ ${data.error || "Failed to add room"}`);
-      }
+      alert(res.ok ? `✅ Room '${room_number}' added.` : `❌ ${data.error}`);
     } catch (err) {
       console.error(err);
       alert("❌ Server error");
@@ -134,110 +124,105 @@ if (urlToken) {
   };
 
   const runImportCsv = async () => {
-  const res = await fetch(`${API_URL}/api/admin/import-csv`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const data = await res.json();
-  alert(data.message || data.error);
+    const res = await fetch(`${API_URL}/api/admin/import-csv`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    alert(data.message || data.error);
   };
 
   const runExportCsv = async () => {
-  const res = await fetch(`${API_URL}/api/admin/export-csv`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const data = await res.json();
-  alert(data.message || data.error);
+    const res = await fetch(`${API_URL}/api/admin/export-csv`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    alert(data.message || data.error);
   };
 
   const deleteUser = async () => {
-  const res = await fetch(`${API_URL}/api/admin/users`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const data = await res.json();
-  const users = data.users;
+    const res = await fetch(`${API_URL}/api/admin/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    const users = data.users;
 
-  let msg = "Select user to delete:\n\n";
-  users.forEach((u, i) => {
-    msg += `${i + 1}) ${u.name} (${u.email})\n`;
-  });
+    let msg = "Select user to delete:\n\n";
+    users.forEach((u, i) => {
+      msg += `${i + 1}) ${u.name} (${u.email})\n`;
+    });
 
-  const sel = parseInt(prompt(msg));
-  if (!sel || isNaN(sel) || sel < 1 || sel > users.length) return;
+    const sel = parseInt(prompt(msg));
+    if (!sel || isNaN(sel) || sel < 1 || sel > users.length) return;
 
-  const userId = users[sel - 1].user_id;
+    const userId = users[sel - 1].user_id;
 
-  const del = await fetch(`${API_URL}/api/admin/delete-user/${userId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` }
-  });
+    const del = await fetch(`${API_URL}/api/admin/delete-user/${userId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const out = await del.json();
+    alert(out.message || out.error);
+  };
 
-  const out = await del.json();
-  alert(out.message || out.error);
-};
+  const deleteRoom = async () => {
+    const res = await fetch(`${API_URL}/api/rooms?date=2025-01-01`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const rooms = (await res.json()).rooms;
 
-const deleteRoom = async () => {
-  const res = await fetch(`${API_URL}/api/rooms?date=2025-01-01`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const rooms = (await res.json()).rooms;
+    let msg = "Select room to delete:\n\n";
+    rooms.forEach((r, i) => {
+      msg += `${i + 1}) ${r.room_number} — capacity ${r.capacity}\n`;
+    });
 
-  let msg = "Select room to delete:\n\n";
-  rooms.forEach((r, i) => {
-    msg += `${i + 1}) ${r.room_number} — capacity ${r.capacity}\n`;
-  });
+    const sel = parseInt(prompt(msg));
+    if (!sel || isNaN(sel) || sel < 1 || sel > rooms.length) return;
 
-  const sel = parseInt(prompt(msg));
-  if (!sel || isNaN(sel) || sel < 1 || sel > rooms.length) return;
+    const roomId = rooms[sel - 1].room_id;
 
-  const roomId = rooms[sel - 1].room_id;
+    const del = await fetch(`${API_URL}/api/admin/delete-room/${roomId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const out = await del.json();
+    alert(out.message || out.error);
+  };
 
-  const del = await fetch(`${API_URL}/api/admin/delete-room/${roomId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` }
-  });
+  const modifyRole = async () => {
+    const res = await fetch(`${API_URL}/api/admin/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    const users = data.users;
 
-  const out = await del.json();
-  alert(out.message || out.error);
-};
+    let msg = "Select user to modify role:\n\n";
+    users.forEach((u, i) => {
+      msg += `${i + 1}) ${u.name} (${u.email}) — current role: ${u.role_name}\n`;
+    });
 
-const modifyRole = async () => {
-  // OPRAVA: fetch() namiesto fetch``
-  const res = await fetch(`${API_URL}/api/admin/users`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const data = await res.json();
-  const users = data.users;
-  
-  let msg = "Select user to modify role:\n\n";
-  users.forEach((u, i) => {
-    msg += `${i + 1}) ${u.name} (${u.email}) — current role: ${u.role_name}\n`;
-  });
-  
-  const sel = parseInt(prompt(msg));
-  if (!sel || isNaN(sel) || sel < 1 || sel > users.length) return;
-  
-  const userId = users[sel - 1].user_id;
-  const newRole = prompt("Enter new role: viewer / employer / admin");
-  if (!newRole) return;
-  
-  // OPRAVA: fetch() namiesto fetch``
-  const req = await fetch(`${API_URL}/api/admin/change-role`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ user_id: userId, role: newRole })
-  });
-  
-  const out = await req.json();
-  alert(out.message || out.error);
-};
+    const sel = parseInt(prompt(msg));
+    if (!sel || isNaN(sel) || sel < 1 || sel > users.length) return;
+
+    const userId = users[sel - 1].user_id;
+    const newRole = prompt("Enter new role: viewer / employer / admin");
+    if (!newRole) return;
+
+    const req = await fetch(`${API_URL}/api/admin/change-role`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ user_id: userId, role: newRole }),
+    });
+
+    const out = await req.json();
+    alert(out.message || out.error);
+  };
 
   return (
-    <>
     <div className="App">
       <h1>BookMyRoom</h1>
       <p>
@@ -245,7 +230,11 @@ const modifyRole = async () => {
       </p>
 
       {!token ? (
-        <button onClick={() => (window.location.href = `${API_URL}/auth/github?redirect=${API_URL}`)}>
+        <button
+          onClick={() =>
+            (window.location.href = `${API_URL}/auth/github?redirect=${API_URL}`)
+          }
+        >
           Sign in with GitHub
         </button>
       ) : (
@@ -253,7 +242,6 @@ const modifyRole = async () => {
       )}
 
       <Routes>
-        {/* HOME PAGE */}
         <Route
           path="/"
           element={
@@ -264,14 +252,12 @@ const modifyRole = async () => {
                   <Rooms />
                 </>
               )}
-
               {role === "employer" && (
                 <>
                   <h3>Reservations</h3>
                   <Rooms canBook canDelete />
                 </>
               )}
-
               {role === "admin" && (
                 <>
                   <h3>Administration</h3>
@@ -279,23 +265,30 @@ const modifyRole = async () => {
                   <button onClick={addRoom} style={{ marginLeft: "0.5rem" }}>
                     Add room
                   </button>
-                  <button onClick={runImportCsv} style={{ marginLeft: "0.5rem" }}>Import CSV</button>
-                  <button onClick={runExportCsv} style={{ marginLeft: "0.5rem" }}>Export CSV</button>
-                  <button onClick={deleteUser} style={{ marginLeft: "0.5rem" }}>Delete user</button>
-                  <button onClick={deleteRoom} style={{ marginLeft: "0.5rem" }}>Delete room</button>
-                  <button onClick={modifyRole} style={{ marginLeft: "0.5rem" }}>Modify roles</button>
+                  <button onClick={runImportCsv} style={{ marginLeft: "0.5rem" }}>
+                    Import CSV
+                  </button>
+                  <button onClick={runExportCsv} style={{ marginLeft: "0.5rem" }}>
+                    Export CSV
+                  </button>
+                  <button onClick={deleteUser} style={{ marginLeft: "0.5rem" }}>
+                    Delete user
+                  </button>
+                  <button onClick={deleteRoom} style={{ marginLeft: "0.5rem" }}>
+                    Delete room
+                  </button>
+                  <button onClick={modifyRole} style={{ marginLeft: "0.5rem" }}>
+                    Modify roles
+                  </button>
                   <Rooms canBook canDelete />
                 </>
               )}
             </>
           }
         />
-
-        {/* SCHEDULE PAGE */}
         <Route path="/schedule/:roomId" element={<RoomSchedule />} />
       </Routes>
-        </div>
-    </>
+    </div>
   );
 }
 
