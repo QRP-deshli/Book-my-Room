@@ -360,7 +360,7 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
 app.post(
   "/api/book-room",
   verifyToken,
-  requireRole("employer", "admin"),
+  requireRole("employee", "admin"),
   async (req, res) => {
     try {
       const { room_id, reservation_date, start_time, duration } = req.body;
@@ -509,7 +509,7 @@ app.get("/api/schedule", async (req, res) => {
 app.delete(
   "/api/cancel-reservation/:id",
   verifyToken,
-  requireRole("employer", "admin"),
+  requireRole("employee", "admin"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -527,7 +527,7 @@ app.delete(
       const ownerId = ownerRes.rows[0].user_id;
 
       // Employers can only remove their own reservations
-      if (req.user.role === "employer" && ownerId !== req.user.id) {
+      if (req.user.role === "employee" && ownerId !== req.user.id) {
         return res
           .status(403)
           .json({ error: "You can only cancel your own reservations" });
