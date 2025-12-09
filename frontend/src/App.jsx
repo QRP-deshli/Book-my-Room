@@ -206,7 +206,7 @@ function App() {
     if (!sel || isNaN(sel) || sel < 1 || sel > users.length) return;
 
     const userId = users[sel - 1].user_id;
-    const newRole = prompt("Enter new role: viewer / employer / admin");
+    const newRole = prompt("Enter new role: viewer / employee / admin");
     if (!newRole) return;
 
     const req = await fetch(`${API_URL}/api/admin/change-role`, {
@@ -252,7 +252,7 @@ function App() {
                   <Rooms />
                 </>
               )}
-              {role === "employer" && (
+              {role === "employee" && (
                 <>
                   <h3>Reservations</h3>
                   <Rooms canBook canDelete />
