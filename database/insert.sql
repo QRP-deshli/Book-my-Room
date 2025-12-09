@@ -25,7 +25,7 @@ INSERT INTO public.rooms (room_number, capacity, floor, building_id) VALUES
 -- ===============================
 INSERT INTO public.users (name, email, role_id) VALUES
   ('Nikita Kuropatkin',  'nikita@example.com',   (SELECT role_id FROM public.roles WHERE name = 'admin')),
-  ('Tibor Olearnik',     'tibor@example.com',    (SELECT role_id FROM public.roles WHERE name = 'employer')),
+  ('Tibor Olearnik',     'tibor@example.com',    (SELECT role_id FROM public.roles WHERE name = 'employee')),
   ('Juraj Pjescak',      'juraj@example.com',    (SELECT role_id FROM public.roles WHERE name = 'viewer')),
   ('Nikodem Simonak',    'nikodem@example.com',  (SELECT role_id FROM public.roles WHERE name = 'viewer')),
   ('Karolina Polackova', 'karolina@example.com', (SELECT role_id FROM public.roles WHERE name = 'viewer'));
