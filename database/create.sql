@@ -30,7 +30,7 @@ CREATE TABLE public.roles (
 );
 
 INSERT INTO public.roles (name)
-VALUES ('viewer'), ('employer'), ('admin');
+VALUES ('viewer'), ('employee'), ('admin');
 
 -- ===============================
 --  USERS TABLE
