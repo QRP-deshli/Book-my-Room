@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 export default function Rooms({ canBook = false, canDelete = false }) {
    const API_URL =
-    process.env.VITE_API_URL ||
+    import.meta.env.VITE_API_URL ||
     "https://book-my-room-pn00.onrender.com";
 
   const [rooms, setRooms] = useState([]);
