@@ -157,43 +157,43 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     return getCurrentLocal().localTime;
   };
 
-  // NEXT FREE SLOT
-  const calculateNextFreeSlotForRoom = (room, startTime, selectedDate) => {
-    const today = getCurrentLocal().localDate;
+const calculateNextFreeSlotForRoom = (room, startTime, selectedDate) => {
+  if (!room || !room.allReservations) return null;
 
-    if (selectedDate < today) return null;
+  // Convert start time
+  const [h, m] = startTime.split(":").map(Number);
+  const desiredStart = h * 60 + m;
+  const durationMin = getDurationInMinutes(duration);
 
-    let currentTime = startTime;
-    if (selectedDate === today) {
-      const now = getCurrentLocal().localTime;
-      if (startTime < now) currentTime = now;
+  // Convert reservations → minutes
+  const reservations = room.allReservations
+    .map((r) => {
+      const [sh, sm] = r.start_time.split(":").map(Number);
+      const [eh, em] = r.end_time.split(":").map(Number);
+      return { start: sh * 60 + sm, end: eh * 60 + em };
+    })
+    .sort((a, b) => a.start - b.start);
+
+  let current = desiredStart;
+
+  for (const r of reservations) {
+    if (current + durationMin <= r.start) {
+      return minutesToTime(current);
     }
-
-    const isTimeFree = (time) => {
-      const testEnd = calculateEndTime(time, duration);
-      return !(room.allReservations || []).some((res) =>
-        checkOverlap(time, testEnd, res.start_time, res.end_time)
-      );
-    };
-
-    let [hours, minutes] = currentTime.split(":").map(Number);
-
-    // NO ROUNDING FIXED
-    while (hours < 24) {
-      const testTime = `${String(hours).padStart(2, "0")}:${String(
-        minutes
-      ).padStart(2, "0")}`;
-      if (isTimeFree(testTime)) return testTime;
-
-      // Keep stepping by 15 minutes (but without rounding the start!)
-      minutes += 15;
-      if (minutes >= 60) {
-        hours += 1;
-        minutes = 0;
-      }
+    if (current < r.end) {
+      current = r.end;
     }
-    return null;
-  };
+  }
+
+  return minutesToTime(current);
+};
+
+function minutesToTime(m) {
+  const h = Math.floor((m % 1440) / 60);
+  const min = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
 
   // FETCH ROOMS
   useEffect(() => {
@@ -239,14 +239,23 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   );
 
   useEffect(() => {
-    if (search && filteredRooms.length === 1) {
-      setSuggestedSlot(
-        calculateNextFreeSlotForRoom(filteredRooms[0], startTime, selectedDate)
-      );
-    } else {
-      setSuggestedSlot(null);
-    }
-  }, [filteredRooms, startTime, selectedDate, search, duration]);
+  if (
+    search &&
+    filteredRooms.length === 1 &&
+    filteredRooms[0].status === "occupied"
+  ) {
+    setSuggestedSlot(
+      calculateNextFreeSlotForRoom(
+        filteredRooms[0],
+        startTime,
+        selectedDate
+      )
+    );
+  } else {
+    setSuggestedSlot(null);
+  }
+}, [filteredRooms, startTime, selectedDate, search, duration]);
+
 
   
 
