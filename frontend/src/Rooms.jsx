@@ -27,9 +27,6 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
 
-  // ===========================
-  // FIXED: NO MORE ROUNDING TIME
-  // ===========================
   function getCurrentLocal() {
     const now = new Date();
     const localDate = now.toISOString().slice(0, 10);
@@ -41,45 +38,20 @@ export default function Rooms({ canBook = false, canDelete = false }) {
 
   // SERVER -> LOCAL
   const serverToLocal = (serverDate, serverTime) => {
-    try {
-      if (!serverDate || !serverTime) {
-        console.error("Invalid date or time:", serverDate, serverTime);
-        return { localDate: selectedDate, localTime: "00:00" };
-      }
-
-      const [year, month, day] = serverDate.split("-");
-      const [hours, minutes] = serverTime.split(":");
-      
-      // Validate parsed values
-      if (!year || !month || !day || !hours || !minutes) {
-        console.error("Failed to parse date/time:", serverDate, serverTime);
-        return { localDate: selectedDate, localTime: "00:00" };
-      }
-
-      const utcDate = new Date(Date.UTC(
-        Number(year),
-        Number(month) - 1,
-        Number(day),
-        Number(hours) - 1,
-        Number(minutes)
-      ));
-
-      // Check if date is valid
-      if (isNaN(utcDate.getTime())) {
-        console.error("Invalid date created:", serverDate, serverTime);
-        return { localDate: selectedDate, localTime: "00:00" };
-      }
-
-      const localDate = utcDate.toISOString().slice(0, 10);
-      const localTime = `${String(utcDate.getHours()).padStart(2, "0")}:${String(
-        utcDate.getMinutes()
-      ).padStart(2, "0")}`;
-      
-      return { localDate, localTime };
-    } catch (err) {
-      console.error("Error in serverToLocal:", err, serverDate, serverTime);
-      return { localDate: selectedDate, localTime: "00:00" };
-    }
+    const [year, month, day] = serverDate.split("-");
+    const [hours, minutes] = serverTime.split(":");
+    const utcDate = new Date(Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours) - 1,
+      Number(minutes)
+    ));
+    const localDate = utcDate.toISOString().slice(0, 10);
+    const localTime = `${String(utcDate.getHours()).padStart(2, "0")}:${String(
+      utcDate.getMinutes()
+    ).padStart(2, "0")}`;
+    return { localDate, localTime };
   };
 
   // LOCAL -> SERVER
@@ -129,22 +101,13 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     return 60;
   };
 
-  const calculateEndTimeInMinutes = (start, durationStr) => {
-    const [h, m] = start.split(":").map(Number);
-    return h * 60 + m + getDurationInMinutes(durationStr);
-  };
-
   const calculateEndTime = (start, durationStr) => {
-    const totalMinutes = calculateEndTimeInMinutes(start, durationStr);
+    const [h, m] = start.split(":").map(Number);
+    const totalMinutes = h * 60 + m + getDurationInMinutes(durationStr);
     const endHours = Math.floor(totalMinutes / 60) % 24;
     const endMinutes = totalMinutes % 60;
-    return `${String(endHours).padStart(2, "0")}:${String(endMinutes).padStart(
-      2,
-      "0"
-    )}`;
+    return `${String(endHours).padStart(2, "0")}:${String(endMinutes).padStart(2, "0")}`;
   };
-
-
 
   // OVERLAP CHECK
   const checkOverlap = (start1, end1, start2, end2) => {
@@ -182,58 +145,51 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     return getCurrentLocal().localTime;
   };
 
-const calculateNextFreeSlotForRoom = (room, startTime, selectedDate) => {
-  if (!room || !room.allReservations) return null;
+  const calculateNextFreeSlotForRoom = (room) => {
+    if (!room || !room.allReservations || room.allReservations.length === 0) {
+      return startTime;
+    }
 
-  // Convert start time
-  const [h, m] = startTime.split(":").map(Number);
-  const desiredStart = h * 60 + m;
-  const durationMin = getDurationInMinutes(duration);
+    const [h, m] = startTime.split(":").map(Number);
+    const desiredStart = h * 60 + m;
+    const durationMin = getDurationInMinutes(duration);
 
-  // Convert reservations → minutes, handle midnight crossing
-  const reservations = room.allReservations
-    .map((r) => {
-      const [sh, sm] = r.start_time.split(":").map(Number);
-      const [eh, em] = r.end_time.split(":").map(Number);
-      let start = sh * 60 + sm;
-      let end = eh * 60 + em;
-      
-      // If end crosses midnight
-      if (end < start) {
-        end += 1440;
+    const reservations = room.allReservations
+      .map((r) => {
+        const [sh, sm] = r.start_time.split(":").map(Number);
+        const [eh, em] = r.end_time.split(":").map(Number);
+        let start = sh * 60 + sm;
+        let end = eh * 60 + em;
+        
+        if (end < start) {
+          end += 1440;
+        }
+        
+        return { start, end };
+      })
+      .sort((a, b) => a.start - b.start);
+
+    let current = desiredStart;
+
+    for (const r of reservations) {
+      if (current + durationMin <= r.start) {
+        const h = Math.floor((current % 1440) / 60);
+        const min = current % 60;
+        return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
       }
-      
-      return { start, end };
-    })
-    .sort((a, b) => a.start - b.start);
-
-  let current = desiredStart;
-
-  for (const r of reservations) {
-    // Check if we can fit before this reservation
-    if (current + durationMin <= r.start) {
-      return minutesToTime(current);
+      if (current < r.end) {
+        current = r.end;
+      }
     }
-    // Move current to end of this reservation if it blocks us
-    if (current < r.end) {
-      current = r.end;
+
+    if (current + durationMin <= 1440) {
+      const h = Math.floor((current % 1440) / 60);
+      const min = current % 60;
+      return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
     }
-  }
 
-  // Check if final slot fits in the day (before midnight + 1440)
-  if (current + durationMin <= 1440) {
-    return minutesToTime(current);
-  }
-
-  return null; // No slot available today
-};
-
-function minutesToTime(m) {
-  const h = Math.floor((m % 1440) / 60);
-  const min = m % 60;
-  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
-}
-
+    return null;
+  };
 
   // FETCH ROOMS
   useEffect(() => {
@@ -249,29 +205,11 @@ function minutesToTime(m) {
     )
       .then((res) => res.json())
       .then((data) => {
-        console.log("API Response:", data); // Debug log
-        
         const processed = data.rooms.map((r) => {
           const allReservations = (r.all_reservations || []).map((res) => {
-            // Use the query date if reservation_date is not provided
-            const resDate = res.reservation_date || serverDate;
-            
-            console.log("Processing reservation:", res); // Debug log
-            
-            // Convert both start and end times with their dates
-            const startConverted = serverToLocal(resDate, res.start_time);
-            const endConverted = serverToLocal(resDate, res.end_time);
-            
-            return { 
-              ...res, 
-              start_time: startConverted.localTime, 
-              end_time: endConverted.localTime,
-              start_date: startConverted.localDate,
-              end_date: endConverted.localDate
-            };
-          }).filter((res) => {
-            // Only include reservations that overlap with selected date
-            return res.start_date === selectedDate || res.end_date === selectedDate;
+            const { localTime: s } = serverToLocal(serverDate, res.start_time);
+            const { localTime: e } = serverToLocal(serverDate, res.end_time);
+            return { ...res, start_time: s, end_time: e };
           });
 
           const requestedEnd = calculateEndTime(startTime, duration);
@@ -301,25 +239,13 @@ function minutesToTime(m) {
   );
 
   useEffect(() => {
-  if (
-    search &&
-    filteredRooms.length === 1 &&
-    filteredRooms[0].status === "occupied"
-  ) {
-    setSuggestedSlot(
-      calculateNextFreeSlotForRoom(
-        filteredRooms[0],
-        startTime,
-        selectedDate
-      )
-    );
-  } else {
-    setSuggestedSlot(null);
-  }
-}, [filteredRooms, startTime, selectedDate, search, duration]);
-
-
-  
+    if (search && filteredRooms.length === 1 && filteredRooms[0].status === "occupied") {
+      const slot = calculateNextFreeSlotForRoom(filteredRooms[0]);
+      setSuggestedSlot(slot);
+    } else {
+      setSuggestedSlot(null);
+    }
+  }, [filteredRooms, startTime, selectedDate, search, duration]);
 
   const handleBook = async (roomId, customTime = null, customDate = null) => {
     const bookingTime = customTime || startTime;
@@ -360,7 +286,7 @@ function minutesToTime(m) {
     }
   };
 
-    // CANCEL
+  // CANCEL
   const handleCancel = async (room) => {
     const overlapping = getOverlappingReservations(room);
 
@@ -379,7 +305,7 @@ function minutesToTime(m) {
       const ok = window.confirm(msg);
       if (!ok) return;
       
-      await cancelReservation(overlapping[0], room);
+      await cancelReservation(overlapping[0]);
     } else {
       msg += "\nOptions:\n";
       msg += "- Enter number(s) separated by comma (e.g., 1,3)\n";
@@ -412,15 +338,14 @@ function minutesToTime(m) {
       if (!window.confirm(confirmMsg)) return;
 
       for (const idx of toCancelIndices) {
-        await cancelReservation(overlapping[idx], room);
+        await cancelReservation(overlapping[idx]);
       }
     }
 
-    // Refresh after cancellation
     window.location.reload();
   };
 
-  const cancelReservation = async (reservation, room) => {
+  const cancelReservation = async (reservation) => {
     try {
       const res = await fetch(
         `${API_URL}/api/cancel-reservation/${reservation.reservation_id}`,
@@ -452,14 +377,13 @@ function minutesToTime(m) {
   const blockPastTime = selectedDate === today && startTime < getMinTime();
   const blockBooking = blockPastDate || blockPastTime;
 
-    // Get timezone info for display
   const getTimezoneDisplay = () => {
     try {
       const localOffset = new Date().getTimezoneOffset();
-      const bratislavaOffset = -60; // Bratislava is UTC+1 (offset in minutes, negative means ahead)
+      const bratislavaOffset = -60;
       
       if (localOffset === bratislavaOffset) {
-        return null; // Same timezone, no need to show
+        return null;
       }
       
       const offsetHours = Math.abs(localOffset / 60);
@@ -471,12 +395,10 @@ function minutesToTime(m) {
     }
   };
 
-
   return (
     <div style={{ padding: "1rem" }}>
       <h2>Room Reservations</h2>
 
-       {/* Timezone info */}
       {getTimezoneDisplay() && (
         <div style={{ 
           backgroundColor: "#f0f8ff", 
@@ -486,10 +408,9 @@ function minutesToTime(m) {
           fontSize: "0.9em",
           color: "#555"
         }}>
-            {getTimezoneDisplay()}
+          {getTimezoneDisplay()}
         </div>
       )}
-
 
       <div>
         <label>
