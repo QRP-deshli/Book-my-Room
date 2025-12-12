@@ -158,8 +158,11 @@ export default function RoomSchedule() {
 
                 // Convert all reservation times from server to local
                 const localReservations = (data || []).map((res) => {
-                    const startConverted = serverToLocal(res.reservation_date, res.start_time);
-                    const endConverted = serverToLocal(res.reservation_date, res.end_time);
+                    // Use the query date if reservation_date is not provided
+                    const resDate = res.reservation_date || date;
+                    
+                    const startConverted = serverToLocal(resDate, res.start_time);
+                    const endConverted = serverToLocal(resDate, res.end_time);
 
                     return {
                         ...res,
@@ -263,8 +266,11 @@ export default function RoomSchedule() {
 
                 // Convert refreshed data to local time
                 const localReservations = (refreshData || []).map((res) => {
-                    const startConverted = serverToLocal(res.reservation_date, res.start_time);
-                    const endConverted = serverToLocal(res.reservation_date, res.end_time);
+                    // Use the query date if reservation_date is not provided
+                    const resDate = res.reservation_date || date;
+                    
+                    const startConverted = serverToLocal(resDate, res.start_time);
+                    const endConverted = serverToLocal(resDate, res.end_time);
 
                     return {
                         ...res,

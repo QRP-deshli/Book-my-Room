@@ -204,9 +204,8 @@ function requireRole(...roles) {
   };
 }
 
-// ===============================
-// GET ROOMS + ALL DAILY RESERVATIONS
-// ===============================
+// In your server.js, replace the GET /api/rooms endpoint with this fixed version:
+
 app.get("/api/rooms", optionalAuth, async (req, res) => {
   try {
     const { date, time, search } = req.query;
@@ -214,7 +213,7 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
     const selectedTime = time || "00:00";
     const searchText = search ? `%${search.toLowerCase()}%` : "%%";
 
-    // Hlavný query — najbližšia / aktívna rezervácia
+    // Main query — nearest / active reservation
     const roomsQuery = `
       SELECT 
         r.room_id,
@@ -261,17 +260,17 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
 
     // Load all reservations for this date for each room
     const reservationsQuery = `
-  SELECT 
-    reservation_id,
-    room_id,
-    start_time,
-    (start_time + duration) AS end_time,
-    duration,
-    user_id
-  FROM reservations
-  WHERE reservation_date = $1
-  ORDER BY start_time;
-`;
+      SELECT 
+        reservation_id,
+        room_id,
+        start_time,
+        (start_time + duration) AS end_time,
+        duration,
+        user_id
+      FROM reservations
+      WHERE reservation_date = $1
+      ORDER BY start_time;
+    `;
 
     const allRes = await pool.query(reservationsQuery, [selectedDate]);
 
@@ -280,19 +279,20 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
       room.reservations = allRes.rows.filter(r => r.room_id === room.room_id);
     });
 
-
     // ======================================
-    // ✨ PRIDANÉ: všetky rezervácie daného dňa
+    // ✨ FIXED: Include reservation_date in all_reservations
     // ======================================
     const all = await pool.query(
       `
       SELECT 
         r.room_id,
         r.reservation_id,
+        r.reservation_date,
         r.start_time,
         (r.start_time + r.duration) AS end_time,
         r.duration,
-        u.name AS user_name
+        u.name AS user_name,
+        r.user_id
       FROM reservations r
       JOIN users u ON r.user_id = u.user_id
       WHERE r.reservation_date = $1
@@ -303,7 +303,7 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
 
     const dailyReservations = all.rows;
 
-    // pripojíme ku každému room len jeho rezervácie
+    // Attach to each room only its reservations
     const roomsWithReservations = rooms.map((room) => ({
       ...room,
       all_reservations: dailyReservations.filter(
@@ -312,7 +312,7 @@ app.get("/api/rooms", optionalAuth, async (req, res) => {
     }));
 
     // ==============================
-    // next free slot (pôvodný kód)
+    // next free slot (original code)
     // ==============================
     let nextFreeSlot = null;
     if (search && rooms.length === 1 && rooms[0].status === "occupied") {
