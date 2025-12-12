@@ -226,9 +226,12 @@ function minutesToTime(m) {
       .then((data) => {
         const processed = data.rooms.map((r) => {
           const allReservations = (r.all_reservations || []).map((res) => {
+            // Use the query date if reservation_date is not provided
+            const resDate = res.reservation_date || serverDate;
+            
             // Convert both start and end times with their dates
-            const startConverted = serverToLocal(res.reservation_date, res.start_time);
-            const endConverted = serverToLocal(res.reservation_date, res.end_time);
+            const startConverted = serverToLocal(resDate, res.start_time);
+            const endConverted = serverToLocal(resDate, res.end_time);
             
             return { 
               ...res, 
@@ -256,6 +259,10 @@ function minutesToTime(m) {
 
         setRooms(processed);
         setSuggestedSlot(null);
+      })
+      .catch((err) => {
+        console.error("Error loading rooms:", err);
+        setRooms([]);
       })
       .finally(() => setLoading(false));
   }, [selectedDate, startTime, duration, search, token]);
