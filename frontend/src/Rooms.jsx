@@ -165,27 +165,42 @@ const calculateNextFreeSlotForRoom = (room, startTime, selectedDate) => {
   const desiredStart = h * 60 + m;
   const durationMin = getDurationInMinutes(duration);
 
-  // Convert reservations → minutes
+  // Convert reservations → minutes, handle midnight crossing
   const reservations = room.allReservations
     .map((r) => {
       const [sh, sm] = r.start_time.split(":").map(Number);
       const [eh, em] = r.end_time.split(":").map(Number);
-      return { start: sh * 60 + sm, end: eh * 60 + em };
+      let start = sh * 60 + sm;
+      let end = eh * 60 + em;
+      
+      // If end crosses midnight
+      if (end < start) {
+        end += 1440;
+      }
+      
+      return { start, end };
     })
     .sort((a, b) => a.start - b.start);
 
   let current = desiredStart;
 
   for (const r of reservations) {
+    // Check if we can fit before this reservation
     if (current + durationMin <= r.start) {
       return minutesToTime(current);
     }
+    // Move current to end of this reservation if it blocks us
     if (current < r.end) {
       current = r.end;
     }
   }
 
-  return minutesToTime(current);
+  // Check if final slot fits in the day (before midnight + 1440)
+  if (current + durationMin <= 1440) {
+    return minutesToTime(current);
+  }
+
+  return null; // No slot available today
 };
 
 function minutesToTime(m) {
@@ -211,9 +226,20 @@ function minutesToTime(m) {
       .then((data) => {
         const processed = data.rooms.map((r) => {
           const allReservations = (r.all_reservations || []).map((res) => {
-            const { localTime: s } = serverToLocal(serverDate, res.start_time);
-            const { localTime: e } = serverToLocal(serverDate, res.end_time);
-            return { ...res, start_time: s, end_time: e };
+            // Convert both start and end times with their dates
+            const startConverted = serverToLocal(res.reservation_date, res.start_time);
+            const endConverted = serverToLocal(res.reservation_date, res.end_time);
+            
+            return { 
+              ...res, 
+              start_time: startConverted.localTime, 
+              end_time: endConverted.localTime,
+              start_date: startConverted.localDate,
+              end_date: endConverted.localDate
+            };
+          }).filter((res) => {
+            // Only include reservations that overlap with selected date
+            return res.start_date === selectedDate || res.end_date === selectedDate;
           });
 
           const requestedEnd = calculateEndTime(startTime, duration);
@@ -489,9 +515,19 @@ function minutesToTime(m) {
       </div>
 
       {search && filteredRooms.length === 1 && suggestedSlot && (
-        <div style={{ color: "green", marginBottom: "1rem" }}>
-          Next free slot for <b>{filteredRooms[0].room_number}</b>:{" "}
-          <b>{suggestedSlot}</b>
+        <div style={{ color: "green", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+          <span>
+            Next free slot for <b>{filteredRooms[0].room_number}</b>:{" "}
+            <b>{suggestedSlot}</b>
+          </span>
+          {canBook && !blockBooking && (
+            <button 
+              onClick={() => handleBook(filteredRooms[0].room_id, suggestedSlot, selectedDate)}
+              style={{ padding: "0.5rem 1rem" }}
+            >
+              Book at {suggestedSlot}
+            </button>
+          )}
         </div>
       )}
 

@@ -119,7 +119,7 @@ export default function RoomSchedule() {
         const rect = e.currentTarget.getBoundingClientRect();
         const y = e.clientY - rect.top;
 
-        setDragY(y); // <<< TOTO PRIDÁVAŠ
+        setDragY(y);
 
         const hours = Math.floor(y / HOUR_HEIGHT);
         const minutes = Math.floor(((y % HOUR_HEIGHT) / HOUR_HEIGHT) * 60);
@@ -158,14 +158,19 @@ export default function RoomSchedule() {
 
                 // Convert all reservation times from server to local
                 const localReservations = (data || []).map((res) => {
-                    const { localTime: localStartTime } = serverToLocal(date, res.start_time);
-                    const { localTime: localEndTime } = serverToLocal(date, res.end_time);
+                    const startConverted = serverToLocal(res.reservation_date, res.start_time);
+                    const endConverted = serverToLocal(res.reservation_date, res.end_time);
 
                     return {
                         ...res,
-                        start_time: localStartTime,
-                        end_time: localEndTime,
+                        start_time: startConverted.localTime,
+                        end_time: endConverted.localTime,
+                        start_date: startConverted.localDate,
+                        end_date: endConverted.localDate,
                     };
+                }).filter((res) => {
+                    // Only show reservations that touch the selected date
+                    return res.start_date === urlDate || res.end_date === urlDate;
                 });
 
                 console.log("Converted to local time:", localReservations);
@@ -258,14 +263,19 @@ export default function RoomSchedule() {
 
                 // Convert refreshed data to local time
                 const localReservations = (refreshData || []).map((res) => {
-                    const { localTime: localStartTime } = serverToLocal(date, res.start_time);
-                    const { localTime: localEndTime } = serverToLocal(date, res.end_time);
+                    const startConverted = serverToLocal(res.reservation_date, res.start_time);
+                    const endConverted = serverToLocal(res.reservation_date, res.end_time);
 
                     return {
                         ...res,
-                        start_time: localStartTime,
-                        end_time: localEndTime,
+                        start_time: startConverted.localTime,
+                        end_time: endConverted.localTime,
+                        start_date: startConverted.localDate,
+                        end_date: endConverted.localDate,
                     };
+                }).filter((res) => {
+                    // Only show reservations that touch the selected date
+                    return res.start_date === urlDate || res.end_date === urlDate;
                 });
 
                 setReservations(localReservations);
@@ -440,6 +450,30 @@ export default function RoomSchedule() {
                         return h * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
                     }
 
+                    // Calculate start and end offsets, handling midnight crossing
+                    let startOffset = offset(r.start_time);
+                    let endOffset = offset(r.end_time);
+
+                    // If reservation starts on a different date, clip to start of day
+                    if (r.start_date !== urlDate) {
+                        startOffset = 0;
+                    }
+
+                    // If reservation ends on a different date, clip to end of day
+                    if (r.end_date !== urlDate) {
+                        endOffset = 24 * HOUR_HEIGHT;
+                    }
+
+                    // Handle midnight crossing within the same visual day
+                    if (r.start_date === urlDate && r.end_date === urlDate && endOffset < startOffset) {
+                        endOffset = 24 * HOUR_HEIGHT;
+                    }
+
+                    const height = endOffset - startOffset;
+
+                    // Skip if height is invalid
+                    if (height <= 0) return null;
+
                     // bezpečné načítanie tokenu
                     let tokenUser = null;
                     try {
@@ -452,14 +486,22 @@ export default function RoomSchedule() {
                     // farba podľa toho, či je rezervácia moja alebo cudzieho používateľa
                     const color = isMine ? "#d47cb3" : "#3F51B5";
 
+                    // Display times
+                    let displayText = `Reserved: ${r.start_time} - ${r.end_time}`;
+                    if (r.start_date !== urlDate) {
+                        displayText = `Reserved: (from ${r.start_date}) - ${r.end_time}`;
+                    } else if (r.end_date !== urlDate) {
+                        displayText = `Reserved: ${r.start_time} - (to ${r.end_date})`;
+                    }
+
                     return (
                         <div
                             key={i}
                             onClick={(e) => e.stopPropagation()}
                             style={{
                                 position: "absolute",
-                                top: offset(r.start_time),
-                                height: offset(r.end_time) - offset(r.start_time),
+                                top: startOffset,
+                                height: height,
                                 left: "100px",
                                 right: "20px",
                                 background: color,
@@ -476,7 +518,7 @@ export default function RoomSchedule() {
                                 boxSizing: "border-box"
                             }}
                         >
-                            Reserved: {r.start_time} - {r.end_time}
+                            {displayText}
                         </div>
                     );
                 })}
