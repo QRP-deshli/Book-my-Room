@@ -156,7 +156,7 @@ app.get(
     const token = jwt.sign(
       { id: req.user.user_id, role: req.user.role_name },
       process.env.JWT_SECRET || "jwtsecret",
-      { expiresIn: "1m" }
+      { expiresIn: "1h" }
     );
 
     // redirect na frontend (produkcia alebo lokál podľa ENV)
