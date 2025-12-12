@@ -32,25 +32,47 @@ export default function RoomSchedule() {
 
     // Convert server date+time (Bratislava) to local date+time
     const serverToLocal = (serverDate, serverTime) => {
-        const [year, month, day] = serverDate.split("-");
-        const [hours, minutes] = serverTime.split(":");
+        try {
+            if (!serverDate || !serverTime) {
+                console.error("Invalid date or time:", serverDate, serverTime);
+                return { localDate: urlDate, localTime: "00:00" };
+            }
 
-        // Create UTC date (server is UTC+1, so subtract 1 hour to get UTC)
-        const utcDate = new Date(Date.UTC(
-            parseInt(year),
-            parseInt(month) - 1,
-            parseInt(day),
-            parseInt(hours) - 1,
-            parseInt(minutes)
-        ));
+            const [year, month, day] = serverDate.split("-");
+            const [hours, minutes] = serverTime.split(":");
 
-        // Convert to local
-        const localDate = utcDate.toISOString().slice(0, 10);
-        const localHours = utcDate.getHours();
-        const localMinutes = utcDate.getMinutes();
-        const localTime = `${String(localHours).padStart(2, "0")}:${String(localMinutes).padStart(2, "0")}`;
+            // Validate parsed values
+            if (!year || !month || !day || !hours || !minutes) {
+                console.error("Failed to parse date/time:", serverDate, serverTime);
+                return { localDate: urlDate, localTime: "00:00" };
+            }
 
-        return { localDate, localTime };
+            // Create UTC date (server is UTC+1, so subtract 1 hour to get UTC)
+            const utcDate = new Date(Date.UTC(
+                parseInt(year),
+                parseInt(month) - 1,
+                parseInt(day),
+                parseInt(hours) - 1,
+                parseInt(minutes)
+            ));
+
+            // Check if date is valid
+            if (isNaN(utcDate.getTime())) {
+                console.error("Invalid date created:", serverDate, serverTime);
+                return { localDate: urlDate, localTime: "00:00" };
+            }
+
+            // Convert to local
+            const localDate = utcDate.toISOString().slice(0, 10);
+            const localHours = utcDate.getHours();
+            const localMinutes = utcDate.getMinutes();
+            const localTime = `${String(localHours).padStart(2, "0")}:${String(localMinutes).padStart(2, "0")}`;
+
+            return { localDate, localTime };
+        } catch (err) {
+            console.error("Error in serverToLocal:", err, serverDate, serverTime);
+            return { localDate: urlDate, localTime: "00:00" };
+        }
     };
 
     // Convert local date+time to server date+time (Bratislava)

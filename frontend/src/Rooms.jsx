@@ -41,20 +41,45 @@ export default function Rooms({ canBook = false, canDelete = false }) {
 
   // SERVER -> LOCAL
   const serverToLocal = (serverDate, serverTime) => {
-    const [year, month, day] = serverDate.split("-");
-    const [hours, minutes] = serverTime.split(":");
-    const utcDate = new Date(Date.UTC(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hours) - 1,
-      Number(minutes)
-    ));
-    const localDate = utcDate.toISOString().slice(0, 10);
-    const localTime = `${String(utcDate.getHours()).padStart(2, "0")}:${String(
-      utcDate.getMinutes()
-    ).padStart(2, "0")}`;
-    return { localDate, localTime };
+    try {
+      if (!serverDate || !serverTime) {
+        console.error("Invalid date or time:", serverDate, serverTime);
+        return { localDate: selectedDate, localTime: "00:00" };
+      }
+
+      const [year, month, day] = serverDate.split("-");
+      const [hours, minutes] = serverTime.split(":");
+      
+      // Validate parsed values
+      if (!year || !month || !day || !hours || !minutes) {
+        console.error("Failed to parse date/time:", serverDate, serverTime);
+        return { localDate: selectedDate, localTime: "00:00" };
+      }
+
+      const utcDate = new Date(Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hours) - 1,
+        Number(minutes)
+      ));
+
+      // Check if date is valid
+      if (isNaN(utcDate.getTime())) {
+        console.error("Invalid date created:", serverDate, serverTime);
+        return { localDate: selectedDate, localTime: "00:00" };
+      }
+
+      const localDate = utcDate.toISOString().slice(0, 10);
+      const localTime = `${String(utcDate.getHours()).padStart(2, "0")}:${String(
+        utcDate.getMinutes()
+      ).padStart(2, "0")}`;
+      
+      return { localDate, localTime };
+    } catch (err) {
+      console.error("Error in serverToLocal:", err, serverDate, serverTime);
+      return { localDate: selectedDate, localTime: "00:00" };
+    }
   };
 
   // LOCAL -> SERVER
@@ -224,10 +249,14 @@ function minutesToTime(m) {
     )
       .then((res) => res.json())
       .then((data) => {
+        console.log("API Response:", data); // Debug log
+        
         const processed = data.rooms.map((r) => {
           const allReservations = (r.all_reservations || []).map((res) => {
             // Use the query date if reservation_date is not provided
             const resDate = res.reservation_date || serverDate;
+            
+            console.log("Processing reservation:", res); // Debug log
             
             // Convert both start and end times with their dates
             const startConverted = serverToLocal(resDate, res.start_time);
