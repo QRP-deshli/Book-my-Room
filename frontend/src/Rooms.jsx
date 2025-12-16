@@ -27,6 +27,9 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
 
+  // ===========================
+  // FIXED: NO MORE ROUNDING TIME
+  // ===========================
   function getCurrentLocal() {
     const now = new Date();
     const localDate = now.toISOString().slice(0, 10);
@@ -101,13 +104,22 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     return 60;
   };
 
-  const calculateEndTime = (start, durationStr) => {
+  const calculateEndTimeInMinutes = (start, durationStr) => {
     const [h, m] = start.split(":").map(Number);
-    const totalMinutes = h * 60 + m + getDurationInMinutes(durationStr);
+    return h * 60 + m + getDurationInMinutes(durationStr);
+  };
+
+  const calculateEndTime = (start, durationStr) => {
+    const totalMinutes = calculateEndTimeInMinutes(start, durationStr);
     const endHours = Math.floor(totalMinutes / 60) % 24;
     const endMinutes = totalMinutes % 60;
-    return `${String(endHours).padStart(2, "0")}:${String(endMinutes).padStart(2, "0")}`;
+    return `${String(endHours).padStart(2, "0")}:${String(endMinutes).padStart(
+      2,
+      "0"
+    )}`;
   };
+
+
 
   // OVERLAP CHECK
   const checkOverlap = (start1, end1, start2, end2) => {
@@ -145,51 +157,43 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     return getCurrentLocal().localTime;
   };
 
-  const calculateNextFreeSlotForRoom = (room) => {
-    if (!room || !room.allReservations || room.allReservations.length === 0) {
-      return startTime;
+const calculateNextFreeSlotForRoom = (room, startTime, selectedDate) => {
+  if (!room || !room.allReservations) return null;
+
+  // Convert start time
+  const [h, m] = startTime.split(":").map(Number);
+  const desiredStart = h * 60 + m;
+  const durationMin = getDurationInMinutes(duration);
+
+  // Convert reservations → minutes
+  const reservations = room.allReservations
+    .map((r) => {
+      const [sh, sm] = r.start_time.split(":").map(Number);
+      const [eh, em] = r.end_time.split(":").map(Number);
+      return { start: sh * 60 + sm, end: eh * 60 + em };
+    })
+    .sort((a, b) => a.start - b.start);
+
+  let current = desiredStart;
+
+  for (const r of reservations) {
+    if (current + durationMin <= r.start) {
+      return minutesToTime(current);
     }
-
-    const [h, m] = startTime.split(":").map(Number);
-    const desiredStart = h * 60 + m;
-    const durationMin = getDurationInMinutes(duration);
-
-    const reservations = room.allReservations
-      .map((r) => {
-        const [sh, sm] = r.start_time.split(":").map(Number);
-        const [eh, em] = r.end_time.split(":").map(Number);
-        let start = sh * 60 + sm;
-        let end = eh * 60 + em;
-        
-        if (end < start) {
-          end += 1440;
-        }
-        
-        return { start, end };
-      })
-      .sort((a, b) => a.start - b.start);
-
-    let current = desiredStart;
-
-    for (const r of reservations) {
-      if (current + durationMin <= r.start) {
-        const h = Math.floor((current % 1440) / 60);
-        const min = current % 60;
-        return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
-      }
-      if (current < r.end) {
-        current = r.end;
-      }
+    if (current < r.end) {
+      current = r.end;
     }
+  }
 
-    if (current + durationMin <= 1440) {
-      const h = Math.floor((current % 1440) / 60);
-      const min = current % 60;
-      return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
-    }
+  return minutesToTime(current);
+};
 
-    return null;
-  };
+function minutesToTime(m) {
+  const h = Math.floor((m % 1440) / 60);
+  const min = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
 
   // FETCH ROOMS
   useEffect(() => {
@@ -227,10 +231,6 @@ export default function Rooms({ canBook = false, canDelete = false }) {
         setRooms(processed);
         setSuggestedSlot(null);
       })
-      .catch((err) => {
-        console.error("Error loading rooms:", err);
-        setRooms([]);
-      })
       .finally(() => setLoading(false));
   }, [selectedDate, startTime, duration, search, token]);
 
@@ -239,13 +239,16 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   );
 
   useEffect(() => {
-    if (search && filteredRooms.length === 1 && filteredRooms[0].status === "occupied") {
-      const slot = calculateNextFreeSlotForRoom(filteredRooms[0]);
-      setSuggestedSlot(slot);
+    if (search && filteredRooms.length === 1) {
+      setSuggestedSlot(
+        calculateNextFreeSlotForRoom(filteredRooms[0], startTime, selectedDate)
+      );
     } else {
       setSuggestedSlot(null);
     }
   }, [filteredRooms, startTime, selectedDate, search, duration]);
+
+  
 
   const handleBook = async (roomId, customTime = null, customDate = null) => {
     const bookingTime = customTime || startTime;
@@ -286,7 +289,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     }
   };
 
-  // CANCEL
+    // CANCEL
   const handleCancel = async (room) => {
     const overlapping = getOverlappingReservations(room);
 
@@ -305,7 +308,7 @@ export default function Rooms({ canBook = false, canDelete = false }) {
       const ok = window.confirm(msg);
       if (!ok) return;
       
-      await cancelReservation(overlapping[0]);
+      await cancelReservation(overlapping[0], room);
     } else {
       msg += "\nOptions:\n";
       msg += "- Enter number(s) separated by comma (e.g., 1,3)\n";
@@ -338,14 +341,15 @@ export default function Rooms({ canBook = false, canDelete = false }) {
       if (!window.confirm(confirmMsg)) return;
 
       for (const idx of toCancelIndices) {
-        await cancelReservation(overlapping[idx]);
+        await cancelReservation(overlapping[idx], room);
       }
     }
 
+    // Refresh after cancellation
     window.location.reload();
   };
 
-  const cancelReservation = async (reservation) => {
+  const cancelReservation = async (reservation, room) => {
     try {
       const res = await fetch(
         `${API_URL}/api/cancel-reservation/${reservation.reservation_id}`,
@@ -377,13 +381,14 @@ export default function Rooms({ canBook = false, canDelete = false }) {
   const blockPastTime = selectedDate === today && startTime < getMinTime();
   const blockBooking = blockPastDate || blockPastTime;
 
+    // Get timezone info for display
   const getTimezoneDisplay = () => {
     try {
       const localOffset = new Date().getTimezoneOffset();
-      const bratislavaOffset = -60;
+      const bratislavaOffset = -60; // Bratislava is UTC+1 (offset in minutes, negative means ahead)
       
       if (localOffset === bratislavaOffset) {
-        return null;
+        return null; // Same timezone, no need to show
       }
       
       const offsetHours = Math.abs(localOffset / 60);
@@ -395,10 +400,12 @@ export default function Rooms({ canBook = false, canDelete = false }) {
     }
   };
 
+
   return (
     <div style={{ padding: "1rem" }}>
       <h2>Room Reservations</h2>
 
+       {/* Timezone info */}
       {getTimezoneDisplay() && (
         <div style={{ 
           backgroundColor: "#f0f8ff", 
@@ -408,9 +415,10 @@ export default function Rooms({ canBook = false, canDelete = false }) {
           fontSize: "0.9em",
           color: "#555"
         }}>
-          {getTimezoneDisplay()}
+            {getTimezoneDisplay()}
         </div>
       )}
+
 
       <div>
         <label>
@@ -472,19 +480,9 @@ export default function Rooms({ canBook = false, canDelete = false }) {
       </div>
 
       {search && filteredRooms.length === 1 && suggestedSlot && (
-        <div style={{ color: "green", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-          <span>
-            Next free slot for <b>{filteredRooms[0].room_number}</b>:{" "}
-            <b>{suggestedSlot}</b>
-          </span>
-          {canBook && !blockBooking && (
-            <button 
-              onClick={() => handleBook(filteredRooms[0].room_id, suggestedSlot, selectedDate)}
-              style={{ padding: "0.5rem 1rem" }}
-            >
-              Book at {suggestedSlot}
-            </button>
-          )}
+        <div style={{ color: "green", marginBottom: "1rem" }}>
+          Next free slot for <b>{filteredRooms[0].room_number}</b>:{" "}
+          <b>{suggestedSlot}</b>
         </div>
       )}
 

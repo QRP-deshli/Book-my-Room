@@ -6,6 +6,7 @@ export default function RoomSchedule() {
     import.meta.env.VITE_API_URL ||
     "https://book-my-room-pn00.onrender.com";
 
+    // Server timezone (Bratislava = UTC+1)
     const SERVER_TIMEZONE = "Europe/Bratislava";
 
     const [reservations, setReservations] = useState([]);
@@ -19,16 +20,22 @@ export default function RoomSchedule() {
     const HOUR_HEIGHT = 51;
     const [pendingTime, setPendingTime] = useState(null);
 
+    // draggable selection line
     const [dragY, setDragY] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
 
+    // current time line
     const [currentY, setCurrentY] = useState(null);
 
-    // SERVER -> LOCAL
+
+    // ===== TIMEZONE CONVERSION HELPERS =====
+
+    // Convert server date+time (Bratislava) to local date+time
     const serverToLocal = (serverDate, serverTime) => {
         const [year, month, day] = serverDate.split("-");
         const [hours, minutes] = serverTime.split(":");
 
+        // Create UTC date (server is UTC+1, so subtract 1 hour to get UTC)
         const utcDate = new Date(Date.UTC(
             parseInt(year),
             parseInt(month) - 1,
@@ -37,6 +44,7 @@ export default function RoomSchedule() {
             parseInt(minutes)
         ));
 
+        // Convert to local
         const localDate = utcDate.toISOString().slice(0, 10);
         const localHours = utcDate.getHours();
         const localMinutes = utcDate.getMinutes();
@@ -45,7 +53,7 @@ export default function RoomSchedule() {
         return { localDate, localTime };
     };
 
-    // LOCAL -> SERVER
+    // Convert local date+time to server date+time (Bratislava)
     const localToServer = (localDate, localTime) => {
         const [year, month, day] = localDate.split("-");
         const [hours, minutes] = localTime.split(":");
@@ -58,15 +66,18 @@ export default function RoomSchedule() {
             parseInt(minutes)
         );
 
+        // Get UTC time
         const utcHours = localDateTime.getUTCHours();
         const utcMinutes = localDateTime.getUTCMinutes();
         const utcDate = localDateTime.getUTCDate();
         const utcMonth = localDateTime.getUTCMonth() + 1;
         const utcYear = localDateTime.getUTCFullYear();
 
+        // Convert UTC to Bratislava (UTC+1)
         let serverHours = utcHours + 1;
         let serverDate = `${utcYear}-${String(utcMonth).padStart(2, "0")}-${String(utcDate).padStart(2, "0")}`;
 
+        // Handle day overflow
         if (serverHours >= 24) {
             serverHours -= 24;
             const nextDay = new Date(localDateTime);
@@ -79,6 +90,7 @@ export default function RoomSchedule() {
         return { serverDate, serverTime };
     };
 
+    // Get timezone info for display
     const getTimezoneDisplay = () => {
         try {
             const localOffset = new Date().getTimezoneOffset();
@@ -97,13 +109,17 @@ export default function RoomSchedule() {
         }
     };
 
-    const { serverDate: date } = localToServer(urlDate, "12:00");
+    // ===== END TIMEZONE HELPERS =====
 
+    // Convert URL date (which is in local timezone from Rooms page) to server date
+    const { serverDate: date } = localToServer(urlDate, "12:00"); // Use noon to avoid day boundary issues
+
+    // Click on timeline
     function handleTimelineClick(e) {
         const rect = e.currentTarget.getBoundingClientRect();
         const y = e.clientY - rect.top;
 
-        setDragY(y);
+        setDragY(y); // <<< TOTO PRIDÁVAŠ
 
         const hours = Math.floor(y / HOUR_HEIGHT);
         const minutes = Math.floor(((y % HOUR_HEIGHT) / HOUR_HEIGHT) * 60);
@@ -114,6 +130,7 @@ export default function RoomSchedule() {
         const clickedLocalTime = `${hh}:${mm}`;
         setPendingTime(clickedLocalTime);
 
+        // Check against past time
         const now = new Date();
         const today = new Date().toISOString().slice(0, 10);
 
@@ -127,18 +144,31 @@ export default function RoomSchedule() {
         }
     }
 
+
+    // Load reservations
     useEffect(() => {
+        console.log("Fetching schedule:", `${API_URL}/api/schedule?room_id=${roomId}&date=${date}`);
+
         fetch(`${API_URL}/api/schedule?room_id=${roomId}&date=${date}`, {
             headers: { Authorization: `Bearer ${token}` }
         })
             .then(res => res.json())
             .then(data => {
+                console.log("Loaded reservations from server:", data);
+
+                // Convert all reservation times from server to local
                 const localReservations = (data || []).map((res) => {
-                    const { localTime: s } = serverToLocal(date, res.start_time);
-                    const { localTime: e } = serverToLocal(date, res.end_time);
-                    return { ...res, start_time: s, end_time: e };
+                    const { localTime: localStartTime } = serverToLocal(date, res.start_time);
+                    const { localTime: localEndTime } = serverToLocal(date, res.end_time);
+
+                    return {
+                        ...res,
+                        start_time: localStartTime,
+                        end_time: localEndTime,
+                    };
                 });
 
+                console.log("Converted to local time:", localReservations);
                 setReservations(localReservations);
             })
             .catch(err => {
@@ -147,6 +177,7 @@ export default function RoomSchedule() {
             });
     }, [roomId, date, token]);
 
+    // CURRENT TIME LINE EFFECT
     useEffect(() => {
         function updateCurrentTime() {
             const now = new Date();
@@ -169,9 +200,12 @@ export default function RoomSchedule() {
         return () => clearInterval(timer);
     }, [urlDate]);
 
+
+    // Direct booking
     const handleBook = async () => {
         if (!pendingTime) return;
 
+        // Check against past time (in local timezone)
         const now = new Date();
         const today = new Date().toISOString().slice(0, 10);
         if (urlDate === today) {
@@ -187,6 +221,7 @@ export default function RoomSchedule() {
         );
         if (!confirm) return;
 
+        // Convert local time to server time
         const { serverDate: bookingServerDate, serverTime: bookingServerTime } = localToServer(urlDate, pendingTime);
 
         const body = {
@@ -195,6 +230,8 @@ export default function RoomSchedule() {
             start_time: bookingServerTime,
             duration: duration,
         };
+
+        console.log("Booking with server time:", body);
 
         try {
             const res = await fetch(`${API_URL}/api/book-room`, {
@@ -212,16 +249,23 @@ export default function RoomSchedule() {
                 alert(`✅ Reservation confirmed at ${pendingTime} (local time)`);
                 setPendingTime(null);
 
+                // Refresh reservations
                 const refreshRes = await fetch(
                     `${API_URL}/api/schedule?room_id=${roomId}&date=${date}`,
                     { headers: { Authorization: `Bearer ${token}` } }
                 );
                 const refreshData = await refreshRes.json();
 
+                // Convert refreshed data to local time
                 const localReservations = (refreshData || []).map((res) => {
-                    const { localTime: s } = serverToLocal(date, res.start_time);
-                    const { localTime: e } = serverToLocal(date, res.end_time);
-                    return { ...res, start_time: s, end_time: e };
+                    const { localTime: localStartTime } = serverToLocal(date, res.start_time);
+                    const { localTime: localEndTime } = serverToLocal(date, res.end_time);
+
+                    return {
+                        ...res,
+                        start_time: localStartTime,
+                        end_time: localEndTime,
+                    };
                 });
 
                 setReservations(localReservations);
@@ -235,6 +279,7 @@ export default function RoomSchedule() {
         }
     };
 
+    // DRAGGING HANDLERS
     function startDrag(e) {
         setIsDragging(true);
     }
@@ -250,6 +295,7 @@ export default function RoomSchedule() {
 
         setDragY(y);
 
+        // convert Y to time
         const hours = Math.floor(y / HOUR_HEIGHT);
         const minutes = Math.floor(((y % HOUR_HEIGHT) / HOUR_HEIGHT) * 60);
 
@@ -263,10 +309,12 @@ export default function RoomSchedule() {
         setIsDragging(false);
     }
 
+
     return (
         <div style={{ padding: "1rem" }}>
             <h2>Room {roomId} – {urlDate}</h2>
 
+            {/* Timezone info */}
             {getTimezoneDisplay() && (
                 <div style={{
                     backgroundColor: "#f0f8ff",
@@ -337,6 +385,7 @@ export default function RoomSchedule() {
                     touchAction: "none"
                 }}
             >
+                {/* DRAG LINE */}
                 {dragY !== null && (
                     <div
                         style={{
@@ -350,6 +399,7 @@ export default function RoomSchedule() {
                     ></div>
                 )}
 
+                {/* CURRENT TIME LINE */}
                 {currentY !== null && (
                     <div
                         style={{
@@ -363,6 +413,9 @@ export default function RoomSchedule() {
                     ></div>
                 )}
 
+
+
+                {/* Time grid - shows local time */}
                 {[...Array(24)].map((_, h) => (
                     <div
                         key={h}
@@ -380,18 +433,23 @@ export default function RoomSchedule() {
                     </div>
                 ))}
 
+                {/* Reservations - already converted to local time */}
                 {reservations.map((r, i) => {
                     function offset(time) {
                         const [h, m] = time.split(":").map(Number);
                         return h * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
                     }
 
+                    // bezpečné načítanie tokenu
                     let tokenUser = null;
                     try {
                         tokenUser = JSON.parse(atob(token.split(".")[1]));
                     } catch { }
 
+                    // porovnanie rezervácie a používateľa
                     const isMine = tokenUser && r.user_id === tokenUser.id;
+
+                    // farba podľa toho, či je rezervácia moja alebo cudzieho používateľa
                     const color = isMine ? "#d47cb3" : "#3F51B5";
 
                     return (
