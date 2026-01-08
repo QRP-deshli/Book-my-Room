@@ -1080,48 +1080,88 @@ tbody tr td:last-child {
     width: 100%;
   }
 
-  .floating-time-indicator {
-    right: 10px;
-    left: 10px;
+.floating-time-indicator {
+    /* Move to Right */
+    left: auto;
+    right: 16px;
     top: auto;
-    bottom: 10px;
+    bottom: 80px; /* Moved up slightly so it doesn't block bottom scroll */
     transform: none;
+    
+    /* Make it Smaller */
+    width: 160px; /* Fixed narrow width */
     min-width: auto;
     padding: 12px;
+    border-radius: 12px;
+  }
+
+  /* Scale down internal elements to fit the small box */
+  .time-display {
+    margin-bottom: 8px;
+    text-align: center;
+  }
+
+  .time-field {
+    margin-bottom: 8px;
+  }
+
+  .time-dropdowns {
+    justify-content: center;
+    gap: 4px;
   }
 
   .time-select {
-    font-size: 14px;
-    padding: 6px;
+    font-size: 13px;
+    padding: 2px 4px;
+    height: 28px;
   }
 
   .time-colon {
-    font-size: 18px;
+    font-size: 14px;
+  }
+
+  .time-separator {
+    font-size: 14px;
+    margin: 2px 0;
   }
 
   .time-end {
-    font-size: 18px;
-    padding: 6px;
+    font-size: 14px;
+    padding: 4px;
+    font-weight: 600;
+  }
+
+  .duration-field {
+    margin-bottom: 10px;
   }
 
   .duration-field select {
-    padding: 6px;
-    font-size: 13px;
+    padding: 4px;
+    font-size: 12px;
+    height: 28px;
+  }
+
+  .floating-actions {
+    gap: 6px;
   }
 
   .btn-book {
-    padding: 8px 12px;
-    font-size: 14px;
+    padding: 6px 10px;
+    font-size: 12px;
+    height: 32px;
   }
 
   .btn-cancel-floating {
-    padding: 6px 12px;
-    font-size: 14px;
+    padding: 6px 10px;
+    font-size: 12px;
+    height: 32px;
   }
 
   .time-field label,
   .duration-field label {
     font-size: 10px;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
+    text-align: center;
   }
+}
 }
