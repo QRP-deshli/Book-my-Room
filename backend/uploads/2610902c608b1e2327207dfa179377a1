@@ -1,0 +1,38 @@
+# USERS
+user_id,name,email,role
+1,Nikita Kuropatkin,nikita@example.com,admin
+2,Tibor Olearnik,tibor@example.com,employee
+3,Juraj Pjescak,juraj@example.com,viewer
+4,Nikodem Simonak,nikodem@example.com,viewer
+5,Karolina Polackova,karolina@example.com,viewer
+6,QRP-deshli,QRP-deshli@github.local,admin
+7,Peter Kovac,peter.kovac@example.com,viewer
+8,Andrej Horvath,andrej.horvath@example.com,admin
+9,Eva Szabova,eva.szabova@example.com,viewer
+
+# ROOMS
+room_id,room_number,capacity,floor,building_id
+1,A101,20,1,1
+2,A102,12,1,1
+3,B201,30,2,2
+4,C301,25,3,5
+5,D105,10,1,4
+6,A103,18,1,1
+7,A104,22,1,1
+8,B202,35,2,2
+9,B203,28,2,2
+10,C302,20,3,5
+
+# RESERVATIONS
+reservation_id,room_id,user_id,reservation_date,start_time,duration,created_date
+1,1,1,1761606000000,11:00:00,"{""hours"":2}",1765234800000
+2,2,2,1761692400000,09:00:00,"{""hours"":1,""minutes"":30}",1765234800000
+3,3,3,1762038000000,14:30:00,"{""hours"":3}",1765234800000
+4,4,4,1762124400000,08:00:00,"{""minutes"":45}",1765234800000
+5,5,5,1762210800000,16:00:00,"{""hours"":1}",1765234800000
+6,1,6,1765234800000,14:57:00,"{""hours"":1}",1765234800000
+8,4,6,1765234800000,15:13:00,"{""hours"":1}",1765234800000
+7,1,6,1765234800000,17:57:00,"{""hours"":1}",1765234800000
+9,2,6,1766530800000,23:45:00,"{""hours"":1}",1766530800000
+10,1,6,1766617200000,01:15:00,"{""hours"":1}",1766617200000
+11,1,6,1766703600000,21:55:00,"{""hours"":1}",1766703600000
