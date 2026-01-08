@@ -18,7 +18,9 @@ CREATE TABLE public.rooms (
   capacity       INTEGER     NOT NULL CHECK (capacity >= 0),
   floor          INTEGER     NOT NULL,
   building_id    INTEGER     NOT NULL REFERENCES public.buildings(building_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  -- Room number must be unique per building (same room number can exist in different buildings)
+  CONSTRAINT rooms_number_building_unique UNIQUE (room_number, building_id)
 );
 
 -- ===============================
@@ -33,13 +35,15 @@ INSERT INTO public.roles (name)
 VALUES ('viewer'), ('employee'), ('admin');
 
 -- ===============================
---  USERS TABLE
+--  USERS TABLE (WITH BUILDING_ID)
 -- ===============================
 CREATE TABLE public.users (
-  user_id SERIAL PRIMARY KEY,
-  name    VARCHAR(100) NOT NULL,
-  email   VARCHAR(100) UNIQUE NOT NULL,
-  role_id INTEGER REFERENCES public.roles(role_id)
+  user_id     SERIAL PRIMARY KEY,
+  name        VARCHAR(100) NOT NULL,
+  email       VARCHAR(100) UNIQUE NOT NULL,
+  role_id     INTEGER REFERENCES public.roles(role_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  building_id INTEGER REFERENCES public.buildings(building_id)
     ON UPDATE CASCADE ON DELETE SET NULL
 );
 

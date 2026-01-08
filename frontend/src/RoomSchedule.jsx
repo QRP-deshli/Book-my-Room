@@ -1,486 +1,608 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function RoomSchedule() {
-     const API_URL =
-    import.meta.env.VITE_API_URL ||
-    "https://book-my-room-pn00.onrender.com";
+  const API_URL = import.meta.env.VITE_API_URL || "https://book-my-room-pn00.onrender.com";
+  
+  const CLIENT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  
+  const [reservations, setReservations] = useState([]);
+  const [duration, setDuration] = useState("1 hour");
+  const [pendingTime, setPendingTime] = useState(null);
+  const [dragY, setDragY] = useState(null);
+  const [currentY, setCurrentY] = useState(null);
+  
+  // Touch tracking for mobile scroll vs tap
+  const [touchStart, setTouchStart] = useState(null);
+  const [isTouchScrolling, setIsTouchScrolling] = useState(false);
+  
+  const timelineRef = useRef(null);
+  const containerRef = useRef(null);
+  
+  const roomId = window.location.pathname.split("/").pop();
+  const [urlDate, setUrlDate] = useState(
+    new URLSearchParams(window.location.search).get("date") || new Date().toISOString().slice(0, 10)
+  );
+  const token = localStorage.getItem("token");
+  const navigate = useNavigate();
+  
+  const HOUR_HEIGHT = 56;
 
-    // Server timezone (Bratislava = UTC+1)
-    const SERVER_TIMEZONE = "Europe/Bratislava";
-
-    const [reservations, setReservations] = useState([]);
-    const [duration, setDuration] = useState("1 hour");
-
-    const roomId = window.location.pathname.split("/").pop();
-    const urlDate = new URLSearchParams(window.location.search).get("date");
-    const token = localStorage.getItem("token");
-    const navigate = useNavigate();
-
-    const HOUR_HEIGHT = 51;
-    const [pendingTime, setPendingTime] = useState(null);
-
-    // draggable selection line
-    const [dragY, setDragY] = useState(null);
-    const [isDragging, setIsDragging] = useState(false);
-
-    // current time line
-    const [currentY, setCurrentY] = useState(null);
-
-
-    // ===== TIMEZONE CONVERSION HELPERS =====
-
-    // Convert server date+time (Bratislava) to local date+time
-    const serverToLocal = (serverDate, serverTime) => {
-        const [year, month, day] = serverDate.split("-");
-        const [hours, minutes] = serverTime.split(":");
-
-        // Create UTC date (server is UTC+1, so subtract 1 hour to get UTC)
-        const utcDate = new Date(Date.UTC(
-            parseInt(year),
-            parseInt(month) - 1,
-            parseInt(day),
-            parseInt(hours) - 1,
-            parseInt(minutes)
-        ));
-
-        // Convert to local
-        const localDate = utcDate.toISOString().slice(0, 10);
-        const localHours = utcDate.getHours();
-        const localMinutes = utcDate.getMinutes();
-        const localTime = `${String(localHours).padStart(2, "0")}:${String(localMinutes).padStart(2, "0")}`;
-
-        return { localDate, localTime };
+  const getDurationInMinutes = (dur) => {
+    const map = {
+      "15 minutes": 15,
+      "30 minutes": 30,
+      "1 hour": 60,
+      "1.5 hours": 90,
+      "2 hours": 120,
+      "24 hours": 1440,
     };
+    return map[dur] || 60;
+  };
 
-    // Convert local date+time to server date+time (Bratislava)
-    const localToServer = (localDate, localTime) => {
-        const [year, month, day] = localDate.split("-");
-        const [hours, minutes] = localTime.split(":");
+  const getTimezoneDisplay = () => {
+    try {
+      const localOffset = new Date().getTimezoneOffset();
+      const bratislavaOffset = -60;
 
-        const localDateTime = new Date(
-            parseInt(year),
-            parseInt(month) - 1,
-            parseInt(day),
-            parseInt(hours),
-            parseInt(minutes)
+      if (localOffset === bratislavaOffset) {
+        return null;
+      }
+
+      const offsetHours = Math.abs(localOffset / 60);
+      const offsetSign = localOffset > 0 ? "-" : "+";
+
+      return `Times shown in your local timezone (UTC${offsetSign}${offsetHours}). Server uses Europe/Bratislava (UTC+1).`;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  // Fetch schedule
+  useEffect(() => {
+    if (!roomId || !urlDate) return;
+
+    fetch(
+      `${API_URL}/api/schedule?room_id=${roomId}&localDate=${urlDate}&clientTz=${CLIENT_TIMEZONE}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        setReservations(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        console.error("Error fetching schedule:", err);
+        setReservations([]);
+      });
+  }, [roomId, urlDate, token]);
+
+  // Update current time indicator
+  useEffect(() => {
+    function updateCurrentTime() {
+      const now = new Date();
+      const today = new Date().toISOString().split("T")[0];
+
+      if (urlDate !== today) {
+        setCurrentY(null);
+        return;
+      }
+
+      const h = now.getHours();
+      const m = now.getMinutes();
+      const y = h * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+
+      setCurrentY(y);
+    }
+
+    updateCurrentTime();
+    const timer = setInterval(updateCurrentTime, 60000);
+    return () => clearInterval(timer);
+  }, [urlDate]);
+
+  // Auto-scroll to current time on mount
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const today = new Date().toISOString().split("T")[0];
+    
+    if (urlDate === today) {
+      const now = new Date();
+      const h = now.getHours();
+      const m = now.getMinutes();
+      const scrollY = h * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+      
+      setTimeout(() => {
+        containerRef.current.scrollTop = Math.max(0, scrollY - 150);
+      }, 100);
+    }
+  }, [urlDate]);
+
+  // Handle touch start for mobile
+  const handleTouchStart = (e) => {
+    const touch = e.touches[0];
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = touch.clientY - rect.top;
+    
+    setTouchStart({ y, time: Date.now() });
+    setIsTouchScrolling(false);
+  };
+
+  // Detect if user is scrolling or tapping
+  const handleTouchMove = (e) => {
+    if (!touchStart) return;
+    
+    const touch = e.touches[0];
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = touch.clientY - rect.top;
+    
+    if (Math.abs(y - touchStart.y) > 10) {
+      setIsTouchScrolling(true);
+    }
+  };
+
+  // Only book if it was a tap, not a scroll
+  const handleTouchEnd = (e) => {
+    if (!touchStart || isTouchScrolling) {
+      setTouchStart(null);
+      setIsTouchScrolling(false);
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = touchStart.y;
+    
+    handleTimelineClick({ currentTarget: e.currentTarget, clientY: rect.top + y });
+    
+    setTouchStart(null);
+    setIsTouchScrolling(false);
+  };
+
+  // Handle clicking on timeline
+  const handleTimelineClick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    
+    setDragY(y);
+    
+    const hours = Math.floor(y / HOUR_HEIGHT);
+    const minutes = Math.floor(((y % HOUR_HEIGHT) / HOUR_HEIGHT) * 60);
+    const roundedMinutes = Math.round(minutes / 5) * 5;
+    
+    const hh = String(hours).padStart(2, "0");
+    const mm = String(roundedMinutes).padStart(2, "0");
+    const clickedLocalTime = `${hh}:${mm}`;
+    
+    // Don't allow past times
+    const now = new Date();
+    const today = new Date().toISOString().slice(0, 10);
+    
+    if (urlDate === today) {
+      const clicked = new Date(`${urlDate}T${clickedLocalTime}:00`);
+      if (clicked < now) {
+        alert("Cannot reserve past time.");
+        setDragY(null);
+        return;
+      }
+    }
+    
+    setPendingTime(clickedLocalTime);
+  };
+
+  // Handle reservation cancellation
+  const handleCancelReservation = async (reservation, e) => {
+    e.stopPropagation();
+    
+    // Get current user info
+    const currentUserId = getCurrentUserId();
+    const userRole = getUserRole();
+    
+    // Check permissions: admin can cancel all, users can only cancel their own
+    if (userRole !== 'admin' && reservation.user_id !== currentUserId) {
+      alert("You can only cancel your own reservations.");
+      return;
+    }
+    
+    if (!window.confirm(`Cancel reservation ${reservation.local_start_time} — ${reservation.local_end_time}?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_URL}/api/cancel-reservation/${reservation.reservation_id}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (res.ok) {
+        alert("✅ Reservation cancelled");
+        
+        const refreshRes = await fetch(
+          `${API_URL}/api/schedule?room_id=${roomId}&localDate=${urlDate}&clientTz=${CLIENT_TIMEZONE}`,
+          { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        // Get UTC time
-        const utcHours = localDateTime.getUTCHours();
-        const utcMinutes = localDateTime.getUTCMinutes();
-        const utcDate = localDateTime.getUTCDate();
-        const utcMonth = localDateTime.getUTCMonth() + 1;
-        const utcYear = localDateTime.getUTCFullYear();
+        const refreshData = await refreshRes.json();
+        setReservations(Array.isArray(refreshData) ? refreshData : []);
+      } else {
+        const data = await res.json();
+        alert(`❌ ${data.error || "Failed to cancel"}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Server error");
+    }
+  };
 
-        // Convert UTC to Bratislava (UTC+1)
-        let serverHours = utcHours + 1;
-        let serverDate = `${utcYear}-${String(utcMonth).padStart(2, "0")}-${String(utcDate).padStart(2, "0")}`;
+  // Handle booking
+  const handleBook = async () => {
+    if (!pendingTime) return;
 
-        // Handle day overflow
-        if (serverHours >= 24) {
-            serverHours -= 24;
-            const nextDay = new Date(localDateTime);
-            nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-            serverDate = nextDay.toISOString().slice(0, 10);
-        }
-
-        const serverTime = `${String(serverHours).padStart(2, "0")}:${String(utcMinutes).padStart(2, "0")}`;
-
-        return { serverDate, serverTime };
-    };
-
-    // Get timezone info for display
-    const getTimezoneDisplay = () => {
-        try {
-            const localOffset = new Date().getTimezoneOffset();
-            const bratislavaOffset = -60;
-
-            if (localOffset === bratislavaOffset) {
-                return null;
-            }
-
-            const offsetHours = Math.abs(localOffset / 60);
-            const offsetSign = localOffset > 0 ? "-" : "+";
-
-            return `Times shown in your local timezone (UTC${offsetSign}${offsetHours}). Server uses Europe/Bratislava (UTC+1).`;
-        } catch (error) {
-            return null;
-        }
-    };
-
-    // ===== END TIMEZONE HELPERS =====
-
-    // Convert URL date (which is in local timezone from Rooms page) to server date
-    const { serverDate: date } = localToServer(urlDate, "12:00"); // Use noon to avoid day boundary issues
-
-    // Click on timeline
-    function handleTimelineClick(e) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const y = e.clientY - rect.top;
-
-        setDragY(y); // <<< TOTO PRIDÁVAŠ
-
-        const hours = Math.floor(y / HOUR_HEIGHT);
-        const minutes = Math.floor(((y % HOUR_HEIGHT) / HOUR_HEIGHT) * 60);
-
-        const hh = String(hours).padStart(2, "0");
-        const mm = String(minutes - (minutes % 15)).padStart(2, "0");
-
-        const clickedLocalTime = `${hh}:${mm}`;
-        setPendingTime(clickedLocalTime);
-
-        // Check against past time
-        const now = new Date();
-        const today = new Date().toISOString().slice(0, 10);
-
-        if (urlDate === today) {
-            const clicked = new Date(`${urlDate}T${clickedLocalTime}:00`);
-            if (clicked < now) {
-                alert("Cannot reserve past time.");
-                setPendingTime(null);
-                return;
-            }
-        }
+    const now = new Date();
+    const today = new Date().toISOString().slice(0, 10);
+    if (urlDate === today) {
+      const clicked = new Date(`${urlDate}T${pendingTime}:00`);
+      if (clicked < now) {
+        alert("Cannot reserve past time.");
+        return;
+      }
     }
 
+    const confirmMsg = `Reserve room ${roomId} on ${urlDate} at ${pendingTime} (local time) for ${duration}?`;
 
-    // Load reservations
-    useEffect(() => {
-        console.log("Fetching schedule:", `${API_URL}/api/schedule?room_id=${roomId}&date=${date}`);
+    if (!window.confirm(confirmMsg)) return;
 
-        fetch(`${API_URL}/api/schedule?room_id=${roomId}&date=${date}`, {
-            headers: { Authorization: `Bearer ${token}` }
-        })
-            .then(res => res.json())
-            .then(data => {
-                console.log("Loaded reservations from server:", data);
+    const body = {
+      room_id: roomId,
+      localDate: urlDate,
+      localTime: pendingTime,
+      duration,
+      clientTz: CLIENT_TIMEZONE,
+    };
 
-                // Convert all reservation times from server to local
-                const localReservations = (data || []).map((res) => {
-                    const { localTime: localStartTime } = serverToLocal(date, res.start_time);
-                    const { localTime: localEndTime } = serverToLocal(date, res.end_time);
+    try {
+      const res = await fetch(`${API_URL}/api/book-room`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
 
-                    return {
-                        ...res,
-                        start_time: localStartTime,
-                        end_time: localEndTime,
-                    };
-                });
+      const data = await res.json();
 
-                console.log("Converted to local time:", localReservations);
-                setReservations(localReservations);
-            })
-            .catch(err => {
-                console.error("Error loading schedule:", err);
-                setReservations([]);
-            });
-    }, [roomId, date, token]);
+      if (res.ok) {
+        alert(`✅ Reservation confirmed at ${pendingTime}`);
+        setPendingTime(null);
+        setDragY(null);
 
-    // CURRENT TIME LINE EFFECT
-    useEffect(() => {
-        function updateCurrentTime() {
-            const now = new Date();
-            const today = new Date().toISOString().split("T")[0];
-
-            if (urlDate !== today) {
-                setCurrentY(null);
-                return;
-            }
-
-            const h = now.getHours();
-            const m = now.getMinutes();
-            const y = h * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
-
-            setCurrentY(y);
-        }
-
-        updateCurrentTime();
-        const timer = setInterval(updateCurrentTime, 60000);
-        return () => clearInterval(timer);
-    }, [urlDate]);
-
-
-    // Direct booking
-    const handleBook = async () => {
-        if (!pendingTime) return;
-
-        // Check against past time (in local timezone)
-        const now = new Date();
-        const today = new Date().toISOString().slice(0, 10);
-        if (urlDate === today) {
-            const clicked = new Date(`${urlDate}T${pendingTime}:00`);
-            if (clicked < now) {
-                alert("Cannot reserve past time.");
-                return;
-            }
-        }
-
-        const confirm = window.confirm(
-            `Reserve room ${roomId} on ${urlDate} at ${pendingTime} (local time) for ${duration}?`
+        const refreshRes = await fetch(
+          `${API_URL}/api/schedule?room_id=${roomId}&localDate=${urlDate}&clientTz=${CLIENT_TIMEZONE}`,
+          { headers: { Authorization: `Bearer ${token}` } }
         );
-        if (!confirm) return;
 
-        // Convert local time to server time
-        const { serverDate: bookingServerDate, serverTime: bookingServerTime } = localToServer(urlDate, pendingTime);
+        const refreshData = await refreshRes.json();
+        setReservations(Array.isArray(refreshData) ? refreshData : []);
+      } else {
+        alert(`❌ ${data.error || "Reservation failed"}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Server connection error");
+    }
+  };
 
-        const body = {
-            room_id: roomId,
-            reservation_date: bookingServerDate,
-            start_time: bookingServerTime,
-            duration: duration,
-        };
+  // Calculate end time for preview
+  const calculateEndTime = (start, dur) => {
+    const [h, m] = start.split(":").map(Number);
+    const totalMinutes = h * 60 + m + getDurationInMinutes(dur);
+    const endH = Math.floor(totalMinutes / 60) % 24;
+    const endM = totalMinutes % 60;
+    return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+  };
 
-        console.log("Booking with server time:", body);
+  // Get current user info from token
+  const getCurrentUserId = () => {
+    try {
+      const tokenUser = JSON.parse(atob(token.split(".")[1]));
+      return tokenUser.id;
+    } catch {
+      return null;
+    }
+  };
 
-        try {
-            const res = await fetch(`${API_URL}/api/book-room`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(body),
+  // Get user role from token
+  const getUserRole = () => {
+    try {
+      const tokenUser = JSON.parse(atob(token.split(".")[1]));
+      return tokenUser.role;
+    } catch {
+      return null;
+    }
+  };
+
+  // Generate time options in 5-minute increments
+  const generateHourOptions = () => {
+    const options = [];
+    for (let h = 0; h < 24; h++) {
+      options.push(String(h).padStart(2, "0"));
+    }
+    return options;
+  };
+
+  const generateMinuteOptions = () => {
+    const options = [];
+    for (let m = 0; m < 60; m += 5) {
+      options.push(String(m).padStart(2, "0"));
+    }
+    return options;
+  };
+
+  // Handle time change from dropdowns
+  const handleTimeChange = (hour, minute) => {
+    const newTime = `${hour}:${minute}`;
+    
+    const now = new Date();
+    const today = new Date().toISOString().slice(0, 10);
+    
+    if (urlDate === today) {
+      const selected = new Date(`${urlDate}T${newTime}:00`);
+      if (selected < now) {
+        alert("Cannot select past time.");
+        return;
+      }
+    }
+    
+    setPendingTime(newTime);
+    
+    // Update drag line position
+    const [h, m] = newTime.split(":").map(Number);
+    const y = h * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+    setDragY(y);
+  };
+
+  // Render timeline
+  const renderTimeline = () => {
+    const currentUserId = getCurrentUserId();
+    const userRole = getUserRole();
+
+    // Group overlapping reservations - IMPROVED algorithm
+    const groupOverlapping = (reservations) => {
+      if (reservations.length === 0) return [];
+      
+      const groups = [];
+      const processed = new Set();
+      
+      reservations.forEach((res, idx) => {
+        if (processed.has(idx)) return;
+        
+        const resStart = res.local_start_time.split(':').map(Number);
+        const resEnd = res.local_end_time.split(':').map(Number);
+        const resStartMins = resStart[0] * 60 + resStart[1];
+        const resEndMins = resEnd[0] * 60 + resEnd[1];
+        
+        const group = [res];
+        processed.add(idx);
+        
+        // Find ALL reservations that overlap with ANY reservation in this group
+        let foundNew = true;
+        while (foundNew) {
+          foundNew = false;
+          
+          reservations.forEach((r, rIdx) => {
+            if (processed.has(rIdx)) return;
+            
+            const rStart = r.local_start_time.split(':').map(Number);
+            const rEnd = r.local_end_time.split(':').map(Number);
+            const rStartMins = rStart[0] * 60 + rStart[1];
+            const rEndMins = rEnd[0] * 60 + rEnd[1];
+            
+            // Check if this reservation overlaps with ANY in the current group
+            const overlapsWithGroup = group.some(groupRes => {
+              const gStart = groupRes.local_start_time.split(':').map(Number);
+              const gEnd = groupRes.local_end_time.split(':').map(Number);
+              const gStartMins = gStart[0] * 60 + gStart[1];
+              const gEndMins = gEnd[0] * 60 + gEnd[1];
+              
+              return (rStartMins < gEndMins && rEndMins > gStartMins);
             });
-
-            const data = await res.json();
-
-            if (res.ok) {
-                alert(`✅ Reservation confirmed at ${pendingTime} (local time)`);
-                setPendingTime(null);
-
-                // Refresh reservations
-                const refreshRes = await fetch(
-                    `${API_URL}/api/schedule?room_id=${roomId}&date=${date}`,
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                const refreshData = await refreshRes.json();
-
-                // Convert refreshed data to local time
-                const localReservations = (refreshData || []).map((res) => {
-                    const { localTime: localStartTime } = serverToLocal(date, res.start_time);
-                    const { localTime: localEndTime } = serverToLocal(date, res.end_time);
-
-                    return {
-                        ...res,
-                        start_time: localStartTime,
-                        end_time: localEndTime,
-                    };
-                });
-
-                setReservations(localReservations);
-
-            } else {
-                alert(`❌ ${data.error || "Reservation failed"}`);
+            
+            if (overlapsWithGroup) {
+              group.push(r);
+              processed.add(rIdx);
+              foundNew = true;
             }
-        } catch (err) {
-            console.error(err);
-            alert("❌ Server connection error");
+          });
         }
+        
+        groups.push(group);
+      });
+      
+      return groups;
     };
 
-    // DRAGGING HANDLERS
-    function startDrag(e) {
-        setIsDragging(true);
-    }
-
-    function onDrag(e) {
-        if (!isDragging) return;
-
-        const container = document.getElementById("timeline");
-        const rect = container.getBoundingClientRect();
-
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        const y = clientY - rect.top;
-
-        setDragY(y);
-
-        // convert Y to time
-        const hours = Math.floor(y / HOUR_HEIGHT);
-        const minutes = Math.floor(((y % HOUR_HEIGHT) / HOUR_HEIGHT) * 60);
-
-        const hh = String(hours).padStart(2, "0");
-        const mm = String(minutes - (minutes % 15)).padStart(2, "0");
-
-        setPendingTime(`${hh}:${mm}`);
-    }
-
-    function endDrag() {
-        setIsDragging(false);
-    }
-
+    const groups = groupOverlapping(reservations);
 
     return (
-        <div style={{ padding: "1rem" }}>
-            <h2>Room {roomId} – {urlDate}</h2>
+      <div
+        id="timeline"
+        ref={timelineRef}
+        className="timeline"
+        onClick={handleTimelineClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          touchAction: "pan-y",
+          position: "relative"
+        }}
+      >
+        {dragY !== null && (
+          <div className="drag-line" style={{ top: dragY }}></div>
+        )}
 
-            {/* Timezone info */}
-            {getTimezoneDisplay() && (
-                <div style={{
-                    backgroundColor: "#f0f8ff",
-                    padding: "0.5rem",
-                    marginBottom: "1rem",
-                    borderRadius: "4px",
-                    fontSize: "0.9em",
-                    color: "#555"
-                }}>
-                    ℹ️ {getTimezoneDisplay()}
-                </div>
-            )}
+        {currentY !== null && (
+          <div className="current-time-line" style={{ top: currentY }}></div>
+        )}
 
-            <button onClick={() => navigate("/")}>← Back</button>
+        {/* Hour markers */}
+        {[...Array(24)].map((_, h) => (
+          <div key={h} className="hour-slot">
+            <span className="time-label">
+              {String(h).padStart(2, "0")}:00
+            </span>
+          </div>
+        ))}
 
-            {pendingTime && (
-                <div style={{ margin: "1rem 0", padding: "1rem", background: "#f0f0f0", borderRadius: "4px" }}>
-                    <b>Selected time:</b> {pendingTime} (local time)
+        {/* Existing reservations */}
+        {groups.map((group, groupIdx) => 
+          group.map((r, indexInGroup) => {
+            function offset(time) {
+              const [h, m] = time.split(":").map(Number);
+              return h * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+            }
 
-                    <label style={{ marginLeft: "1rem" }}>
-                        Duration:
-                        <select
-                            value={duration}
-                            onChange={(e) => setDuration(e.target.value)}
-                            style={{ marginLeft: "0.5rem" }}
-                        >
-                            <option value="15 minutes">15 minutes</option>
-                            <option value="30 minutes">30 minutes</option>
-                            <option value="1 hour">1 hour</option>
-                            <option value="1.5 hours">1.5 hours</option>
-                            <option value="2 hours">2 hours</option>
-                            <option value="24 hours">Whole day</option>
-                        </select>
-                    </label>
+            const isMine = currentUserId && r.user_id === currentUserId;
+            const canCancel = userRole === 'admin' || isMine;
+            
+            const groupSize = group.length;
+            const widthPercent = groupSize > 1 ? (95 / groupSize) : 100;
+            const leftOffset = groupSize > 1 ? (indexInGroup * widthPercent) : 0;
+            
+            // Different positioning for mobile
+            const isMobile = window.innerWidth <= 768;
+            const baseLeft = isMobile ? 60 : 80;
 
-                    <button
-                        style={{ marginLeft: "1rem", background: "#4CAF50", color: "white", padding: "0.5rem 1rem", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                        onClick={handleBook}
-                    >
-                        Book Now
-                    </button>
-
-                    <button
-                        style={{ marginLeft: "0.5rem" }}
-                        onClick={() => setPendingTime(null)}
-                    >
-                        Cancel
-                    </button>
-                </div>
-            )}
-
-            <div
-                id="timeline"
-                onClick={handleTimelineClick}
-                onMouseDown={startDrag}
-                onMouseMove={onDrag}
-                onMouseUp={endDrag}
-                onTouchStart={startDrag}
-                onTouchMove={onDrag}
-                onTouchEnd={endDrag}
+            return (
+              <div
+                key={`${groupIdx}-${indexInGroup}`}
+                className={`reservation-block ${isMine ? "mine" : "other"}`}
                 style={{
-                    position: "relative",
-                    borderLeft: "1px solid #555",
-                    marginTop: "1rem",
-                    height: 24 * HOUR_HEIGHT,
-                    width: "100%",
-                    cursor: "pointer",
-                    touchAction: "none"
+                  top: offset(r.local_start_time),
+                  height: offset(r.local_end_time) - offset(r.local_start_time),
+                  left: groupSize > 1 ? `calc(${baseLeft}px + ${leftOffset}%)` : `${baseLeft}px`,
+                  width: groupSize > 1 ? `calc(${widthPercent}% - 20px)` : `calc(100% - ${baseLeft + 20}px)`,
                 }}
-            >
-                {/* DRAG LINE */}
-                {dragY !== null && (
-                    <div
-                        style={{
-                            position: "absolute",
-                            top: dragY,
-                            left: 0,
-                            right: 0,
-                            borderTop: "2px solid #2196F3",
-                            zIndex: 20
-                        }}
-                    ></div>
+                title={isMine ? "" : `Reserved by ${r.user_name || "someone"}`}
+              >
+                <div className="reservation-content">
+                  <strong>{r.local_start_time} — {r.local_end_time}</strong>
+                </div>
+                {canCancel && (
+                  <button 
+                    className="reservation-delete-btn"
+                    onClick={(e) => handleCancelReservation(r, e)}
+                    title="Cancel reservation"
+                  >
+                    X
+                  </button>
                 )}
-
-                {/* CURRENT TIME LINE */}
-                {currentY !== null && (
-                    <div
-                        style={{
-                            position: "absolute",
-                            top: currentY,
-                            left: 0,
-                            right: 0,
-                            borderTop: "2px solid red",
-                            zIndex: 15
-                        }}
-                    ></div>
-                )}
-
-
-
-                {/* Time grid - shows local time */}
-                {[...Array(24)].map((_, h) => (
-                    <div
-                        key={h}
-                        style={{
-                            height: HOUR_HEIGHT,
-                            borderTop: "1px solid #444",
-                            paddingLeft: "5px",
-                            color: "#777",
-                            margin: 0,
-                            boxSizing: "border-box",
-                            display: "flex",
-                        }}
-                    >
-                        {String(h).padStart(2, "0")}:00
-                    </div>
-                ))}
-
-                {/* Reservations - already converted to local time */}
-                {reservations.map((r, i) => {
-                    function offset(time) {
-                        const [h, m] = time.split(":").map(Number);
-                        return h * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
-                    }
-
-                    // bezpečné načítanie tokenu
-                    let tokenUser = null;
-                    try {
-                        tokenUser = JSON.parse(atob(token.split(".")[1]));
-                    } catch { }
-
-                    // porovnanie rezervácie a používateľa
-                    const isMine = tokenUser && r.user_id === tokenUser.id;
-
-                    // farba podľa toho, či je rezervácia moja alebo cudzieho používateľa
-                    const color = isMine ? "#d47cb3" : "#3F51B5";
-
-                    return (
-                        <div
-                            key={i}
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                                position: "absolute",
-                                top: offset(r.start_time),
-                                height: offset(r.end_time) - offset(r.start_time),
-                                left: "100px",
-                                right: "20px",
-                                background: color,
-                                opacity: 0.85,
-                                borderRadius: "4px",
-                                padding: "4px",
-                                cursor: "default",
-                                zIndex: 10,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "white",
-                                fontWeight: "bold",
-                                boxSizing: "border-box"
-                            }}
-                        >
-                            Reserved: {r.start_time} - {r.end_time}
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     );
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="App">
+      <div className="schedule-header">
+        <div className="schedule-header-left">
+          <h2>Room {roomId}</h2>
+          <input
+            type="date"
+            value={urlDate}
+            min={today}
+            onChange={(e) => setUrlDate(e.target.value)}
+            className="date-picker-schedule"
+          />
+        </div>
+        <div className="actions">
+          <button className="btn-outline" onClick={() => navigate("/")}>
+            ← Back
+          </button>
+        </div>
+      </div>
+
+      {getTimezoneDisplay() && (
+        <div className="info-box">
+          {getTimezoneDisplay()}
+        </div>
+      )}
+
+      {/* Floating time indicator with booking controls */}
+      {pendingTime && (
+        <div className="floating-time-indicator">
+          <div className="time-display">
+            <div className="time-field">
+              <label>Start Time</label>
+              <div className="time-dropdowns">
+                <select
+                  value={pendingTime.split(":")[0]}
+                  onChange={(e) => handleTimeChange(e.target.value, pendingTime.split(":")[1])}
+                  className="time-select"
+                >
+                  {generateHourOptions().map(hour => (
+                    <option key={hour} value={hour}>{hour}</option>
+                  ))}
+                </select>
+                <span className="time-colon">:</span>
+                <select
+                  value={pendingTime.split(":")[1]}
+                  onChange={(e) => handleTimeChange(pendingTime.split(":")[0], e.target.value)}
+                  className="time-select"
+                >
+                  {generateMinuteOptions().map(minute => (
+                    <option key={minute} value={minute}>{minute}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            <div className="time-separator">↓</div>
+            
+            <div className="time-end">{calculateEndTime(pendingTime, duration)}</div>
+          </div>
+          
+          <div className="duration-field">
+            <label>Duration</label>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+            >
+              <option value="15 minutes">15 min</option>
+              <option value="30 minutes">30 min</option>
+              <option value="1 hour">1 hour</option>
+              <option value="1.5 hours">1.5 hours</option>
+              <option value="2 hours">2 hours</option>
+              <option value="24 hours">Whole day</option>
+            </select>
+          </div>
+
+          <div className="floating-actions">
+            <button className="btn-book" onClick={handleBook}>
+              Book Now
+            </button>
+            <button className="btn-cancel-floating" onClick={() => {
+              setPendingTime(null);
+              setDragY(null);
+            }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="schedule-container" ref={containerRef}>
+        {renderTimeline()}
+      </div>
+    </div>
+  );
 }
