@@ -17,6 +17,10 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
   const [selectedReservationIds, setSelectedReservationIds] = useState(new Set());
   const [suggestedSlot, setSuggestedSlot] = useState(null);
   
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [roomsPerPage] = useState(20); // Show 20 rooms per page
+  
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
@@ -57,15 +61,13 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
     return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
   };
 
-  // ✅ NEW: Check if booking crosses midnight
   const bookingCrossesMidnight = (start, dur) => {
     const [h, m] = start.split(":").map(Number);
     const startMinutes = h * 60 + m;
     const endMinutes = startMinutes + getDurationInMinutes(dur);
-    return endMinutes >= 1440; // Crosses midnight if >= 24 hours
+    return endMinutes >= 1440;
   };
 
-  // ✅ NEW: Get next date
   const getNextDate = (date) => {
     const d = new Date(date);
     d.setDate(d.getDate() + 1);
@@ -130,20 +132,17 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
     return null;
   };
 
-  // ✅ UPDATED: Fetch rooms with reservations from current AND next day if needed
   useEffect(() => {
     setLoading(true);
 
     const crossesMidnight = bookingCrossesMidnight(startTime, duration);
     const nextDate = crossesMidnight ? getNextDate(selectedDate) : null;
 
-    // Fetch current day
     const fetchCurrentDay = fetch(
       `${API_URL}/api/rooms?localDate=${selectedDate}&localTime=${startTime}&search=${search}&clientTz=${CLIENT_TIMEZONE}`,
       { headers: { Authorization: `Bearer ${token}` } }
     ).then(res => res.json());
 
-    // Fetch next day if crossing midnight
     const fetchNextDay = crossesMidnight
       ? fetch(
           `${API_URL}/api/rooms?localDate=${nextDate}&localTime=00:00&search=${search}&clientTz=${CLIENT_TIMEZONE}`,
@@ -159,15 +158,12 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
           return;
         }
 
-        // Merge reservations from both days
         const processed = currentData.rooms.map((room) => {
           let allReservations = [...(room.reservations || [])];
 
-          // Add next day reservations if we're crossing midnight
           if (nextData && nextData.rooms) {
             const nextDayRoom = nextData.rooms.find(r => r.room_id === room.room_id);
             if (nextDayRoom && nextDayRoom.reservations) {
-              // Tag next day reservations
               const nextDayReservations = nextDayRoom.reservations.map(res => ({
                 ...res,
                 is_next_day: true,
@@ -181,13 +177,11 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
           
           const hasOverlap = allReservations.some((res) => {
             if (res.is_next_day) {
-              // For next day reservations, check if they overlap with the portion after midnight
               const bookingEndTime = calculateEndTime(startTime, duration);
               const bookingCrosses = bookingCrossesMidnight(startTime, duration);
               
               if (!bookingCrosses) return false;
               
-              // The booking continues into next day from 00:00 to bookingEndTime
               return checkOverlap("00:00", bookingEndTime, res.local_start_time, res.local_end_time);
             } else {
               return checkOverlap(startTime, requestedEnd, res.local_start_time, res.local_end_time);
@@ -202,6 +196,7 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
         });
 
         setRooms(processed);
+        setCurrentPage(1); // Reset to first page when filters change
       })
       .catch((err) => {
         console.error("Error fetching rooms:", err);
@@ -220,6 +215,42 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
 
     return statusMatch && buildingMatch;
   });
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredRooms.length / roomsPerPage);
+  const indexOfLastRoom = currentPage * roomsPerPage;
+  const indexOfFirstRoom = indexOfLastRoom - roomsPerPage;
+  const currentRooms = filteredRooms.slice(indexOfFirstRoom, indexOfLastRoom);
+
+  // Generate page numbers to display
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxPagesToShow = 5;
+    
+    if (totalPages <= maxPagesToShow) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
+  };
 
   useEffect(() => {
     if (search && filteredRooms.length === 1) {
@@ -271,13 +302,11 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
     }
   };
 
-  // ✅ UPDATED: Get overlapping reservations including next day
   const handleCancelClick = (room) => {
     const requestedEnd = calculateEndTime(startTime, duration);
     
     const overlapping = (room.reservations || []).filter((res) => {
       if (res.is_next_day) {
-        // For next day reservations, check against portion after midnight
         const bookingCrosses = bookingCrossesMidnight(startTime, duration);
         if (!bookingCrosses) return false;
         return checkOverlap("00:00", requestedEnd, res.local_start_time, res.local_end_time);
@@ -356,7 +385,6 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
     }
   };
 
-  // ✅ UPDATED: Get overlapping reservations including next day
   const getOverlappingReservations = (room) => {
     const requestedEnd = calculateEndTime(startTime, duration);
     return (room.reservations || []).filter((res) => {
@@ -400,7 +428,7 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
 
   return (
     <>
-      <div className="card">
+      <div className="card rooms-section">
         <h2>Room Reservations</h2>
 
         {getTimezoneDisplay() && (
@@ -499,6 +527,13 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
           </div>
         )}
 
+        {/* Pagination Info */}
+        {filteredRooms.length > 0 && (
+          <div className="pagination-info">
+            Showing {indexOfFirstRoom + 1} - {Math.min(indexOfLastRoom, filteredRooms.length)} of {filteredRooms.length} rooms
+          </div>
+        )}
+
         {loading ? (
           <p className="loading">Loading...</p>
         ) : (
@@ -516,7 +551,7 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
               </thead>
 
               <tbody>
-                {filteredRooms.map((r) => {
+                {currentRooms.map((r) => {
                   const overlapping = getOverlappingReservations(r);
                   return (
                     <tr key={r.room_id}>
@@ -573,7 +608,7 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
             </table>
 
             <div className="rooms-mobile-cards">
-              {filteredRooms.map((r) => {
+              {currentRooms.map((r) => {
                 const overlapping = getOverlappingReservations(r);
                 return (
                   <div key={r.room_id} className="room-card-mobile">
@@ -639,6 +674,55 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
                 );
               })}
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="pagination">
+                <button
+                  className="pagination-btn"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  « First
+                </button>
+                <button
+                  className="pagination-btn"
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                >
+                  ‹ Prev
+                </button>
+                
+                {getPageNumbers().map((page, idx) => (
+                  page === '...' ? (
+                    <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
+                  ) : (
+                    <button
+                      key={page}
+                      className={`pagination-btn ${currentPage === page ? 'active' : ''}`}
+                      onClick={() => setCurrentPage(page)}
+                    >
+                      {page}
+                    </button>
+                  )
+                ))}
+                
+                <button
+                  className="pagination-btn"
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next ›
+                </button>
+                <button
+                  className="pagination-btn"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                >
+                  Last »
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -675,7 +759,6 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
                     />
                     <div className="reservation-details">
                       <div className="reservation-time">
-                        {/* ✅ Show date if it's a next-day reservation */}
                         {res.is_next_day && <span className="next-day-badge">{res.display_date}</span>}
                         {res.local_start_time} — {res.local_end_time}
                       </div>

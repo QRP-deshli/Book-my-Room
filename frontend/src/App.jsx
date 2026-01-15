@@ -100,7 +100,7 @@ function App() {
     <div className="App">
       <div className="app-header">
         <div className="app-title">
-          <h1>BookMyRoom</h1>
+          <h1>BookMe</h1>
           {userProfile ? (
             <p>
               <b>{userProfile.name}</b> • Role: <b>{role}</b>
@@ -134,15 +134,6 @@ function App() {
           path="/"
           element={
             <>
-              {token && (role === "employee" || role === "admin") && (
-                <UserSettings 
-                  token={token} 
-                  apiUrl={API_URL} 
-                  userProfile={userProfile}
-                  onProfileUpdate={loadUserProfile}
-                />
-              )}
-
               {role === "viewer" && (
                 <>
                   <Rooms userBuilding={userProfile?.building_id} />
@@ -151,6 +142,12 @@ function App() {
               {role === "employee" && (
                 <>
                   <Rooms canBook canDelete userBuilding={userProfile?.building_id} />
+                  <UserSettings 
+                    token={token} 
+                    apiUrl={API_URL} 
+                    userProfile={userProfile}
+                    onProfileUpdate={loadUserProfile}
+                  />
                 </>
               )}
               {role === "admin" && (
@@ -163,6 +160,12 @@ function App() {
                   </div>
                   <AdminPanel token={token} apiUrl={API_URL} />
                   <Rooms canBook canDelete userBuilding={userProfile?.building_id} />
+                  <UserSettings 
+                    token={token} 
+                    apiUrl={API_URL} 
+                    userProfile={userProfile}
+                    onProfileUpdate={loadUserProfile}
+                  />
                 </>
               )}
             </>
