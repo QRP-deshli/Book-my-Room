@@ -193,6 +193,7 @@ export default function RoomSchedule() {
   // Handle reservation cancellation
   const handleCancelReservation = async (reservation, e) => {
     e.stopPropagation();
+    e.preventDefault(); // Also prevent default behavior
     
     // Get current user info
     const currentUserId = getCurrentUserId();
@@ -496,6 +497,11 @@ export default function RoomSchedule() {
                   <button 
                     className="reservation-delete-btn"
                     onClick={(e) => handleCancelReservation(r, e)}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      handleCancelReservation(r, e);
+                    }}
                     title="Cancel reservation"
                   >
                     X
