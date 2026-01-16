@@ -957,14 +957,27 @@ app.delete(
   async (req, res) => {
     try {
       const { id } = req.params;
+      
+      // First, delete all reservations for this room
+      const reservationsDeleted = await pool.query(
+        "DELETE FROM reservations WHERE room_id = $1",
+        [id]
+      );
+      
+      // Then delete the room
       const result = await pool.query(
         "DELETE FROM rooms WHERE room_id = $1 RETURNING *",
         [id]
       );
+      
       if (result.rowCount === 0) {
         return res.status(404).json({ error: "Room not found" });
       }
-      res.json({ message: "Room deleted successfully" });
+      
+      res.json({ 
+        message: "Room deleted successfully",
+        reservations_deleted: reservationsDeleted.rowCount
+      });
     } catch (err) {
       console.error("Error deleting room:", err);
       res.status(500).json({ error: "Internal server error" });
