@@ -52,7 +52,7 @@ export default function RoomSchedule() {
       const offsetHours = Math.abs(localOffset / 60);
       const offsetSign = localOffset > 0 ? "-" : "+";
 
-      return `Times shown in your local timezone (UTC${offsetSign}${offsetHours}). Server uses Europe/Bratislava (UTC+1).`;
+      return `Times shown in your local timezone (UTC${offsetSign}${offsetHours}).`;
     } catch (error) {
       return null;
     }
