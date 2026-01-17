@@ -437,7 +437,22 @@ tbody tr td:last-child {
 .suggestion-book-btn {
   margin-left: auto;
   white-space: nowrap;
+  background: var(--success);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: all 0.2s ease;
 }
+
+.suggestion-book-btn:hover {
+  background: #15803d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
 
 .suggestion b {
   font-weight: 600;

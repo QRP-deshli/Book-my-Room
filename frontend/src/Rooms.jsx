@@ -520,13 +520,15 @@ export default function Rooms({ canBook = false, canDelete = false, userBuilding
           </div>
         )}
 
-          {search && filteredRooms.length === 1 && suggestedSlot && (
+        {search && filteredRooms.length === 1 && suggestedSlot && (
           <div className="suggestion">
-            Next free slot for <b>{filteredRooms[0].room_number}</b>:{" "}
-            <b>{suggestedSlot}</b>
+            <span>
+              Next free slot for <b>{filteredRooms[0].room_number}</b>:{" "}
+              <b>{suggestedSlot}</b>
+            </span>
             {canBook && !blockBooking && (
               <button
-                className="book suggestion-book-btn"
+                className="suggestion-book-btn"
                 onClick={() => handleBook(filteredRooms[0].room_id, suggestedSlot, selectedDate)}
               >
                 Book
