@@ -425,14 +425,18 @@ tbody tr td:last-child {
 
 /* Suggestion */
 .suggestion {
-  background: #dcfce7;
-  color: var(--success);
-  padding: 12px 16px;
-  border-radius: 10px;
-  margin-bottom: 20px;
-  font-size: 14px;
-  font-weight: 500;
-  border-left: 3px solid var(--success);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background-color: #e8f5e9;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.suggestion-book-btn {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .suggestion b {
