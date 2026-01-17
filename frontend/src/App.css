@@ -453,6 +453,7 @@ tbody tr td:last-child {
   background: #15803d;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+}
 
 .suggestion b {
   font-weight: 600;
